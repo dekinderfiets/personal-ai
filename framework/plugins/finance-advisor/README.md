@@ -73,6 +73,7 @@ The local JSON files contain a `transactions` array where each item has a `json`
 | `actualPaymentAmount` | number | Final payment in NIS (may be null if pending) |
 | `originalAmount` | number | Original transaction amount (fallback) |
 | `purchaseDate` | datetime | Transaction timestamp (ISO 8601) |
+| `paymentDate` | datetime | Date payment was settled (ISO 8601, may be null) |
 | `originalCurrency` | string | ILS, USD, EUR, etc. |
 | `categoryId` | number | Category enum from credit card provider |
 
@@ -80,11 +81,16 @@ The local JSON files contain a `transactions` array where each item has a `json`
 
 ### Step 1: Fetch Transactions
 
-Calculate the billing date range (15th to 15th) based on the current date, then locate and read the relevant JSON file(s) from `context/datasets/financial`.
+Calculate the current billing cycle based on `paymentDate`.
 
-**Date Logic:**
-- If `today.day >= 15`: Start=`ThisMonth-15`, End=`NextMonth-15`
-- Else: Start=`LastMonth-15`, End=`ThisMonth-15`
+**Cycle Definition:**
+A transaction belongs to the current cycle if:
+1. `paymentDate` is **empty** (it's a pending transaction).
+2. **OR** `paymentDate` is **after** the 15th of the previous month (not including the 15th itself).
+
+**Date Range Logic for queries:**
+- **Start Date**: 15th of the last month (exclusive).
+- **Target Fields**: Filter on `paymentDate`.
 
 **Command:**
 Use your standard file tools (`list_dir`, `view_file`, `grep`, etc.) to:

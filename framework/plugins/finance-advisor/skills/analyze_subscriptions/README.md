@@ -20,9 +20,13 @@ Identify transactions that match subscription patterns:
 - Known merchants (Netflix, Spotify, Apple, Google, Adobe).
 - Regular amounts (e.g. 29.90 occurring same day).
 
+**Determine Status**:
+- **Active**: Payment detected in the most recent billing cycle (last 30-31 days).
+- **Stopped**: No payment detected in the last cycle (e.g., service stopped 2 months ago are no longer subscriptions).
+
 ### Step 2: Calculate Metrics
 
-- **Total Monthly Cost**: Sum of all active subscriptions.
+- **Total Monthly Cost**: Sum of all **Active** subscriptions only.
 - **Yearly Run Rate**: Monthly * 12.
 
 ### Step 3: Audit Changes
@@ -34,6 +38,7 @@ If historical data is available (or user provides context):
 ### Step 4: Report
 
 Generate a "Subscription Audit" table:
-| Service | Cost | Status |
-|---------|------|--------|
-| Netflix | ₪49 | Active |
+| Service | Cost | Status | Last Payment |
+|---------|------|--------|--------------|
+| Netflix | ₪49 | Active | 3 days ago |
+| Disney+ | ₪39 | Stopped| 2 months ago |

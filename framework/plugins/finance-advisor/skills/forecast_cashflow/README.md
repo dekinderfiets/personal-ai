@@ -14,34 +14,26 @@ Predicts end-of-month balance by distinguishing between fixed recurring costs (s
 | `budget` | No | Total budget |
 | `cycle_end_date` | Yes | Date cycle ends |
 
-## Prerequisites
+## Data Access
 
-> [!CRITICAL]
-> **Strict Data Requirement**: usage of this skill requires REAL transaction data from NocoDB.
-> **DO NOT generate sample data.**
-> **DO NOT hallucinate transactions.**
+> [!IMPORTANT]
+> **Source of Truth**: All transaction data resides in local JSON files in `context/datasets/financial`.
+> **DO NOT** assume data exists in `context/datasets` for transaction files.
+> **DO NOT** simulate data unless explicitly requested.
 
 ### Data Fetching Protocol
 
-1. **Attempt to run the curl command below.**
-   - If you have access to a shell/terminal tool, execute it.
-   - If successful, use the JSON output as your `transactions` input.
+1. **Locate Files**: List files in `context/datasets/financial`.
+2. **Access Data**: Read the JSON files corresponding to the current cycle's months.
+3. **Filter Logic**:
+   - A transaction belongs to the current cycle if:
+     - `paymentDate` is **null** (pending).
+     - **OR** `paymentDate` is **after** the 15th of the previous month (not including the 15th).
 
-2. **FAILURE MODE: If you act as a chatbot (e.g., Telegram) and cannot run shell commands:**
-   - **STOP IMMEDIATELY.**
-   - **DO NOT** produce a forecast with fake numbers.
-   - Output the command below in a code block and ask the user to run it and paste the result.
-
-**Fetch Command:**
-```bash
-# 1. Calculate dates:
-# If today >= 15th: Start=ThisMonth-15, End=NextMonth-15
-# Else:             Start=LastMonth-15, End=ThisMonth-15
-
-# 2. Run curl (replace dates YYYY-MM-DD):
-curl -X GET "${CREDIT_CARD_TRANSACTIONS_NOCODB_HOST}/api/v2/tables/${CREDIT_CARD_TRANSACTIONS_NOCODB_TABLE_ID}/records?where=(purchaseDate,ge,${START_DATE})~and(purchaseDate,lt,${END_DATE})&limit=500" \
-  -H "xc-token: ${CREDIT_CARD_TRANSACTIONS_NOCODB_API_TOKEN}"
-```
+**Example Start Date calculation:**
+If today is **Feb 7, 2026**:
+- Start Date = **Jan 15, 2026** (exclusive).
+- Query = `paymentDate == null || paymentDate > "2026-01-15"`.
 
 ## Instructions
 
