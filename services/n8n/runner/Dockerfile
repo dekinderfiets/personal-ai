@@ -18,7 +18,7 @@ RUN python3 -c "import json; \
     f='/etc/n8n-task-runners.json'; \
     data=json.load(open(f)); \
     [r['env-overrides'].update({'N8N_RUNNERS_STDLIB_ALLOW':'*', 'N8N_RUNNERS_EXTERNAL_ALLOW':'*'}) for r in data['task-runners'] if r['runner-type']=='python']; \
-    [r['env-overrides'].update({'NODE_FUNCTION_ALLOW_BUILTIN':'*', 'NODE_FUNCTION_ALLOW_EXTERNAL':'*'}) for r in data['task-runners'] if r['runner-type']=='javascript']; \
+    [r['env-overrides'].update({'NODE_FUNCTION_ALLOW_BUILTIN':'*', 'NODE_FUNCTION_ALLOW_EXTERNAL':'*', 'NODE_PATH':'/usr/lib/node_modules:/opt/runners/task-runner-javascript/node_modules'}) for r in data['task-runners'] if r['runner-type']=='javascript']; \
     json.dump(data, open(f,'w'))"
 
 # Restore apk tools (pattern from root Dockerfile)
@@ -30,8 +30,11 @@ RUN ARCH=$(uname -m) && \
     ./sbin/apk.static -X http://dl-cdn.alpinelinux.org/alpine/latest-stable/main -U --allow-untrusted add apk-tools && \
     rm -rf sbin apk-tools-static-*.apk
 
-# Install nodejs and npm
-RUN apk add --no-cache nodejs npm && \
-    npm install -g cron-parser
+# Install nodejs, npm and pnpm
+RUN cd /opt/runners/task-runner-javascript && \
+    pnpm add cron-parser
+
+# Set NODE_PATH to include global and local modules
+ENV NODE_PATH=/usr/lib/node_modules:/usr/local/lib/node_modules:/opt/runners/task-runner-javascript/node_modules
 
 USER runner

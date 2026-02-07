@@ -42,7 +42,9 @@ services:
       - ./code-agent/tsconfig.json:/app/tsconfig.json:cached
       - ./code-agent/tsconfig.app.json:/app/tsconfig.app.json:cached
       - /app/node_modules
-    env_file: services/ai/.env
+    env_file:
+      - services/ai/.env
+      - services/ai/.assistant-agent.env
     ports:
       - "127.0.0.1:8086:8086"
     restart: always

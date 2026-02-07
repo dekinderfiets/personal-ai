@@ -55,7 +55,7 @@ Use this plugin when:
 1. Read `brain/guidelines.md` for output standards
 2. Read `tools/nocodb/TOOL.md` to understand database operations
 3. Read `tools/time/TOOL.md` for getting current time (essential for relative times)
-4. Read `tools/timezone/TOOL.md` for timezone conversion (**user input is Israel time, storage is UTC**)
+4. Read `tools/timezone/TOOL.md` for timezone conversion (**user input is Israel time, storage is UTC, including the cron expression for recurrence**)
 5. Verify environment variables are available:
    - `TASKS_NOCODB_HOST`
    - `TASKS_NOCODB_API_TOKEN`
@@ -68,7 +68,7 @@ Use this plugin when:
 | Column | Type | Description |
 |--------|------|-------------|
 | `content` | string | Task prompt to pass to the AI plugin |
-| `execute_at` | datetime | When to execute the task (ISO 8601) |
+| `execute_at` | datetime | When to execute the task (ISO 8601 UTC) |
 | `executed` | boolean | Whether task was executed (default: false) |
 | `recurrence` | string | Cron expression (null for one-time) |
 | `recurrence_end` | datetime | When to stop recurring (null = forever) |
@@ -79,20 +79,24 @@ Use this plugin when:
 
 The `recurrence` field stores cron expressions (5 fields: minute, hour, day-of-month, month, day-of-week).
 
-**Natural Language → Cron Translation:**
+> [!IMPORTANT]
+> **All cron expressions MUST be stored in UTC.**
+> When the user provides a time (e.g., "9am"), you must convert this from Israel time (user's local time) to UTC BEFORE generating the cron expression.
 
-| User Says | Cron Expression |
-|-----------|-----------------|
-| "every day at 9am" | `0 9 * * *` |
-| "every day at 9:30am" | `30 9 * * *` |
-| "every Monday at 9am" | `0 9 * * 1` |
-| "every weekday at 9am" | `0 9 * * 1-5` |
-| "every weekend at 10am" | `0 10 * * 0,6` |
-| "every month on the 1st at 9am" | `0 9 1 * *` |
-| "every month on the 15th at 3pm" | `0 15 15 * *` |
-| "every year on Jan 1st at midnight" | `0 0 1 1 *` |
-| "every hour" | `0 * * * *` |
-| "every 30 minutes" | `*/30 * * * *` |
+**Natural Language → Cron Translation (Example for UTC+2 Israel time):**
+
+| User Says | Calculation | Cron Expression (UTC) |
+|-----------|-------------|-----------------------|
+| "every day at 9am" | 9am IST → 7am UTC | `0 7 * * *` |
+| "every day at 9:30am" | 9:30am IST → 7:30am UTC | `30 7 * * *` |
+| "every Monday at 9am" | 9 Monday IST → 7 Monday UTC | `0 7 * * 1` |
+| "every weekday at 9am" | 9am IST → 7am UTC | `0 7 * * 1-5` |
+| "every weekend at 10am" | 10am IST → 8am UTC | `0 8 * * 0,6` |
+| "every month on the 1st at 9am" | 9am IST → 7am UTC | `0 7 1 * *` |
+| "every month on the 15th at 3pm" | 3pm IST → 1pm UTC | `0 13 15 * *` |
+| "every year on Jan 1st at midnight" | 12am IST → 10pm (prev day) UTC | `0 22 31 12 *` |
+| "every hour" | N/A | `0 * * * *` |
+| "every 30 minutes" | N/A | `*/30 * * * *` |
 
 **Cron → Human-Readable Translation (for list output):**
 
@@ -102,6 +106,21 @@ The `recurrence` field stores cron expressions (5 fields: minute, hour, day-of-m
 | `0 9 * * 1` | "Every Monday at 9:00 AM" |
 | `0 9 * * 1-5` | "Weekdays at 9:00 AM" |
 | `0 9 1 * *` | "Monthly on the 1st at 9:00 AM" |
+
+### Scheduling Logic (Natural Language Times)
+
+When the user provides a natural language time (e.g., "at 9am") without a specific date:
+1.  Convert the time to **UTC**.
+2.  Compare the target UTC time with the **current UTC time**.
+3.  **If the target UTC time has NOT passed yet today**, schedule for **today**.
+4.  **If the target UTC time HAS already passed today**, schedule for **tomorrow**.
+
+> [!TIP]
+> Tasks should generally end today if possible. Only start from tomorrow if the requested hour in UTC has already passed for the current day.
+
+**Example (Current UTC: 2026-02-07 08:30:00):**
+- User says "at 9am IST" (7am UTC): 7am UTC has passed -> Schedule for **2026-02-08 07:00:00 UTC**.
+- User says "at 12pm IST" (10am UTC): 10am UTC has not passed -> Schedule for **2026-02-07 10:00:00 UTC**.
 
 ---
 
