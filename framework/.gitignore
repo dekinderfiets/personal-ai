@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.env
+.venv
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Outputs (optional - uncomment if you don't want to track outputs)
+# outputs/artifacts/
+# outputs/results/
+
+# Memory (typically not tracked)
+memory/state/*
+memory/sessions/*
+memory/checkpoints/*
+!memory/**/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Secrets (never commit these)
+*.pem
+*.key
+secrets/
+credentials/

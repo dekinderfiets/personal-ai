@@ -1,0 +1,24 @@
+{
+    "name": "n8n-mock-license-server",
+    "version": "1.0.0",
+    "description": "Mock license server for testing n8n Enterprise features",
+    "main": "server.js",
+    "scripts": {
+        "start": "node server.js",
+        "dev": "node --watch server.js"
+    },
+    "keywords": [
+        "n8n",
+        "license",
+        "mock",
+        "testing"
+    ],
+    "author": "n8n",
+    "license": "SEE LICENSE IN LICENSE.md",
+    "dependencies": {
+        "express": "^4.21.0",
+        "jsonwebtoken": "^9.0.2",
+        "body-parser": "^1.20.2",
+        "cors": "^2.8.5"
+    }
+}

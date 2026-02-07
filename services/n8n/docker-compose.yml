@@ -1,0 +1,59 @@
+services:
+  license-server:
+    build: services/n8n/license
+    container_name: n8n-license-server
+    restart: unless-stopped
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: personal-ai_app
+    depends_on:
+      - redis
+      - postgres
+    ports:
+      - "127.0.0.1:5678:5678"
+    env_file: services/n8n/.env
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./storage:/home/node/.n8n-files/storage
+      - ./framework/context:/home/node/.n8n-files/framework/context
+      - ./n8n-nodes-token-aware-memory:/opt/custom-nodes/n8n-nodes-token-aware-memory
+      - ./services/n8n/license:/license
+    restart: unless-stopped
+
+  n8n_worker:
+    image: n8nio/n8n:latest
+    container_name: personal-ai_worker
+    depends_on:
+      - redis
+      - n8n
+    command: [ "worker", "--concurrency", "20" ]
+    env_file: services/n8n/.env
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./storage:/home/node/.n8n-files/storage
+      - ./framework/context:/home/node/.n8n-files/framework/context
+      - ./n8n-nodes-token-aware-memory:/opt/custom-nodes/n8n-nodes-token-aware-memory
+      - ./services/n8n/license:/license
+    restart: unless-stopped
+
+  n8n-task-runners:
+    build:
+      context: services/n8n/runner
+      dockerfile: Dockerfile
+    container_name: n8n-task-runners
+    env_file: services/n8n/.env
+    volumes:
+      - ./services/n8n/license:/license
+    depends_on:
+      - n8n
+    restart: unless-stopped
+
+volumes:
+  n8n_data:
+    name: personal-ai_n8n_data
+    external: true
+networks:
+  default:
+    name: personal-ai-net
+    external: true

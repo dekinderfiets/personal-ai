@@ -1,0 +1,84 @@
+services:
+  code-agent:
+    build:
+      context: code-agent
+      dockerfile: Dockerfile
+      target: production
+    volumes:
+      - ./storage/jobposts:/workspace:ro
+      - ./code-agent/src:/app/src:cached
+      - ./code-agent/package.json:/app/package.json:cached
+      - ./code-agent/tsconfig.json:/app/tsconfig.json:cached
+      - ./code-agent/tsconfig.app.json:/app/tsconfig.app.json:cached
+      - /app/node_modules
+    env_file: services/ai/.env
+    ports:
+      - "127.0.0.1:8085:8085"
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+    healthcheck:
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8085/api/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  assistant-agent:
+    build:
+      context: code-agent
+      dockerfile: Dockerfile
+      target: production
+    volumes:
+      - ./framework:/workspace:ro
+      - ./framework/workspace:/workspace/workspace
+      - ./framework/sandbox:/workspace/sandbox
+      - ./code-agent/src:/app/src:cached
+      - ./code-agent/package.json:/app/package.json:cached
+      - ./code-agent/tsconfig.json:/app/tsconfig.json:cached
+      - ./code-agent/tsconfig.app.json:/app/tsconfig.app.json:cached
+      - /app/node_modules
+    env_file: services/ai/.env
+    ports:
+      - "127.0.0.1:8086:8086"
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+    healthcheck:
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8086/api/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  whisper-api:
+    build:
+      context: whisper-api
+      dockerfile: Dockerfile
+    container_name: whisper-hebrew-api
+    env_file: services/ai/.env
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 4G
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" ]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 60s
+networks:
+  default:
+    name: personal-ai-net
+    external: true

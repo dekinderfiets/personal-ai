@@ -1,0 +1,5 @@
+http://{$FILES_HOST} {
+  encode gzip
+  root * /srv/framework
+  file_server browse
+}

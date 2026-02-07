@@ -1,0 +1,57 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: personal-ai_postgres
+    env_file: services/infra/.env
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    container_name: redis
+    command: [ "redis-server", "--appendonly", "yes" ]
+    env_file: services/infra/.env
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  chroma:
+    image: chromadb/chroma:latest
+    ports:
+      - "127.0.0.1:8001:8000"
+    env_file: services/infra/.env
+    environment:
+      ANONYMIZED_TELEMETRY: false
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    container_name: personal-ai_caddy
+    ports:
+      - "127.0.0.1:80:80"
+    env_file: services/infra/.env
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+      - ./services/infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./framework:/srv/framework:ro
+    restart: unless-stopped
+
+volumes:
+  pg_data:
+    name: personal-ai_pg_data
+    external: true
+  redis_data:
+    name: personal-ai_redis_data
+    external: true
+  caddy_data:
+    name: personal-ai_caddy_data
+    external: true
+  caddy_config:
+    name: personal-ai_caddy_config
+    external: true
+
+networks:
+  default:
+    name: personal-ai-net

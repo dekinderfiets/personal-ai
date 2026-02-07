@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  whisper-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: whisper-hebrew-api
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL_PATH=/app/models/whisper-large-v3-ct2
+      - DEVICE=cpu
+      - COMPUTE_TYPE=int8
+    volumes:
+      # Optional: Mount a local models directory to persist/share models
+      # - ./models:/app/models
+      # Optional: Mount for development (comment out in production)
+      # - ./app:/app/app
+      []
+    restart: unless-stopped
+    # Resource limits (adjust based on your system)
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 4G
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 60s
+
+# Optional: GPU support (uncomment if using NVIDIA GPU)
+# services:
+#   whisper-api-gpu:
+#     build:
+#       context: .
+#       dockerfile: Dockerfile.gpu
+#     container_name: whisper-hebrew-api-gpu
+#     ports:
+#       - "8000:8000"
+#     environment:
+#       - MODEL_PATH=/app/models/whisper-large-v3-ct2
+#       - DEVICE=cuda
+#       - COMPUTE_TYPE=float16
+#     deploy:
+#       resources:
+#         reservations:
+#           devices:
+#             - driver: nvidia
+#               count: 1
+#               capabilities: [gpu]
+#     restart: unless-stopped

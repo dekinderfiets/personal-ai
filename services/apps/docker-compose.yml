@@ -1,0 +1,61 @@
+services:
+  nocodb:
+    image: nocodb/nocodb:latest
+    container_name: nocodb_app
+    depends_on:
+      - redis
+    ports:
+      - "127.0.0.1:8080:8080"
+    env_file: services/apps/.env
+    environment:
+      NC_TOOL_DIR: "/usr/app/data"
+    volumes:
+      - nocodb_data:/usr/app/data
+    restart: unless-stopped
+  # collector:
+  #   build:
+  #     context: collector
+  #     dockerfile: Dockerfile
+  #     target: production
+  #   container_name: collector_service
+  #   depends_on:
+  #     - redis
+  #     - chroma
+  #   ports:
+  #     - "127.0.0.1:8087:8087"
+  #   command: [ "node", "dist/main" ]
+  #   env_file: .env
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 2G
+  #       reservations:
+  #         memory: 1G
+  #   healthcheck:
+  #     test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8087/api/v1/health" ]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 20s
+
+  # collector_ui:
+  #   image: node:20-alpine
+  #   container_name: collector_ui
+  #   working_dir: /app
+  #   volumes:
+  #     - collector/ui:/app
+  #   ports:
+  #     - "127.0.0.1:5173:5173"
+  #   command: sh -c "npm install --legacy-peer-deps && npm run dev -- --host"
+  #   env_file: .env
+  #   restart: unless-stopped
+
+volumes:
+  nocodb_data:
+    name: personal-ai_nocodb_data
+    external: true
+networks:
+  default:
+    name: personal-ai-net
+    external: true
