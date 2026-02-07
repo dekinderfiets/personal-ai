@@ -10,7 +10,7 @@ RUN mkdir -p /opt/runners/task-runner-python
 
 # Install packages using uv into the system python or specific venv
 RUN cd /opt/runners/task-runner-python && \
-    uv pip install telegramify-markdown "telegramify-markdown[mermaid]" --python /opt/runners/task-runner-python/.venv/bin/python
+    uv pip install --upgrade telegramify-markdown "telegramify-markdown[mermaid]" --python /opt/runners/task-runner-python/.venv/bin/python
 
 # Patch the default config to allow all imports (overriding the default restrictive settings)
 # We use python to modify the JSON in place, preserving optimal paths/commands

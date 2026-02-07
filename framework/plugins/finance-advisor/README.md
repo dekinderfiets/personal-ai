@@ -13,6 +13,12 @@ Acts as a dedicated accountant to track spending, audit expenses for anomalies, 
 - **Strategic Forecasting**: analyzes burn rate with context.
 - **Spending Analysis**: Deep dives into categories and merchants.
 
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `/daily_financial_brief` | Provides a quick summary of today's spending and the current month's status. Invokes `skills/audit_expenses`, `skills/analyze_subscriptions`, and `skills/generate_financial_statement`. |
+
 ## When to Use
 
 Use this plugin when:
