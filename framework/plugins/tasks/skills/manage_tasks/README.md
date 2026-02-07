@@ -22,7 +22,8 @@ Unified interface for all task management operations.
 
 Handle valid actions:
 1. **create**: Requires `content` and `execute_at`.
-   - Convert time to UTC.
+   - Convert `execute_at` time to **UTC** (ISO 8601 format).
+   - Convert `recurrence` (natural language) to a cron expression in **UTC** (based on Israel time).
    - POST to NocoDB.
 2. **list**: Optional `filter`.
    - GET from NocoDB.
