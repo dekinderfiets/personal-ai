@@ -20,6 +20,10 @@ Unified interface for all task management operations.
 
 ### Step 1: Parse Action
 
+> [!CAUTION]
+> **NEVER STORE LOCAL TIME.**
+> You MUST convert all user-provided times to **UTC** before calling NocoDB. Storing times in the user's local timezone is a critical failure.
+
 Handle valid actions:
 1. **create**: Requires `content` and `execute_at`.
    - Convert `execute_at` time to **UTC** (ISO 8601 format).

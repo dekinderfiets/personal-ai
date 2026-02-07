@@ -50,6 +50,10 @@ Use this plugin when:
 
 ## Instructions
 
+> [!CAUTION]
+> **YOU MUST STORE ALL TIMES IN UTC.**
+> The `execute_at` field and any recurrence cron expressions **MUST** be converted to UTC before storage. Storing times in the user's local timezone (IST) is a **CRITICAL FAILURE**.
+
 ### Pre-Execution
 
 1. Read `brain/guidelines.md` for output standards
