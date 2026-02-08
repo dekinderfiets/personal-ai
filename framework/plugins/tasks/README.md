@@ -15,6 +15,12 @@ Provides a natural language interface for managing scheduled tasks. An external 
 - Delete tasks
 - Parse natural language dates into ISO 8601 format
 
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `/agenda` | Lists all tasks scheduled for today. Invokes `skills/manage_tasks` with `action: list` and appropriate filters for the current day. |
+
 ## When to Use
 
 Use this plugin when:

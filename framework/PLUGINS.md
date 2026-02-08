@@ -119,6 +119,41 @@ Combine patterns as needed for complex workflows.
 
 ---
 
+## Corrections
+
+> [!CAUTION]
+> **ALWAYS read `context/corrections/` at the start of EVERY conversation.**
+> Before responding to any user request, scan all correction files to avoid repeating past mistakes.
+
+### On Every Run
+
+1. Read all files in `context/corrections/`
+2. Keep corrections in mind when responding
+3. Apply relevant corrections to your responses
+
+### When to Store New Corrections
+
+Store a correction when the user says things like:
+- "No, I meant..."
+- "You're wrong, it should be..."
+- "Actually, when I say X, I mean Y"
+- "Remember that..." (in context of correcting behavior)
+
+**All correction management (create/update/delete) must be done via the `corrections` plugin.**
+
+### When NOT to Store
+
+Do **not** store corrections that are:
+- **Too specific**: "I meant the 15th" (lacks context)
+- **One-time facts**: "The meeting is at 3pm" (not a pattern)
+- **Temporary preferences**: "Use dark mode for now"
+
+### Command: `/corrections`
+
+When user types `/corrections`, list all stored corrections using the corrections plugin.
+
+---
+
 ## Quick Start
 
 When you receive a user request:

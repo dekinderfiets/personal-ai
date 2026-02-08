@@ -23,9 +23,10 @@ Predicts end-of-month balance by distinguishing between fixed recurring costs (s
 
 ### Data Fetching Protocol
 
-1. **Locate Files**: List files in `context/datasets/financial`.
-2. **Access Data**: Read the JSON files corresponding to the current cycle's months.
-3. **Filter Logic**:
+1. **Check Date**: Always use the `time` tool to get the current date first. This ensures you know where you are in the cycle.
+2. **Locate Files**: List files in `context/datasets/financial`.
+3. **Access Data**: Read the JSON files corresponding to the current cycle's months.
+4. **Filter Logic**:
    - A transaction belongs to the current cycle if:
      - `paymentDate` is **null** (pending).
      - **OR** `paymentDate` is **after** the 15th of the previous month (not including the 15th).

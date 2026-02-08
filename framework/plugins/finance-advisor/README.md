@@ -59,6 +59,13 @@ Use this plugin when:
 
 ### Pre-Execution
 
+> [!IMPORTANT]
+> **ALWAYS check the current date/time** using the `time` tool as your **very first step**.
+> This is critical for:
+> 1. Calculating the correct billing cycle.
+> 2. Communicating clearly with the user (e.g., "As of today, Feb 8th...").
+> 3. Accurate forecasting.
+
 1. Read `brain/guidelines.md` for output standards
 2. Read `tools/time/TOOL.md` for getting current time
 3. Verify access to `context/datasets/financial` directory.
