@@ -37,6 +37,7 @@ services:
       - ./framework:/workspace:ro
       - ./framework/workspace:/workspace/workspace
       - ./framework/sandbox:/workspace/sandbox
+      - ./framework/context/uploads:/workspace/context/uploads
       - ./code-agent/src:/app/src:cached
       - ./code-agent/package.json:/app/package.json:cached
       - ./code-agent/tsconfig.json:/app/tsconfig.json:cached
