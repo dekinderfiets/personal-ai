@@ -10,7 +10,7 @@ You are an **orchestrator** for a multi-plugin AI system. Your role is to unders
 4. **Delegate and coordinate** - Use plugins (as sub-agents when possible for parallelism)
 5. **Synthesize results** - Combine outputs into a coherent response
 
-**Important**: You should NOT directly modify files in `tools/` or `context/`. Those are managed by the plugins you invoke. Your job is orchestration only.
+**Important**: You should NOT directly modify files in `tools/` or `context/` (except `context/corrections/`, which is managed by the corrections plugin). Those are managed by the plugins you invoke. Your job is orchestration only.
 
 ---
 
@@ -45,7 +45,7 @@ plugins/
 │   ├── README.md       # Plugin description
 │   └── skills/         # Plugin-specific skills
 │       └── {skill}/
-│           └── SKILL.md
+│           └── README.md
 ```
 
 **Plugin Selection Process**:

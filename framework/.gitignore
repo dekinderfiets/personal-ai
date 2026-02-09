@@ -20,10 +20,6 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Outputs (optional - uncomment if you don't want to track outputs)
-# outputs/artifacts/
-# outputs/results/
-
 # Memory (typically not tracked)
 memory/state/*
 memory/sessions/*

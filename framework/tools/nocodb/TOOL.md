@@ -3,7 +3,7 @@ name: nocodb
 description: Interact with NocoDB databases via REST API. Perform CRUD operations on tables for storing and retrieving structured data.
 ---
 
-# NocoDB Skill
+# NocoDB Tool
 
 Interact with NocoDB databases using the REST API v2.
 

@@ -3,7 +3,7 @@ name: time
 description: Get the current date and time. Essential for calculating relative times like "in 5 minutes" or "tomorrow at 3pm".
 ---
 
-# Time Skill
+# Time Tool
 
 Get the current date/time for calculations and scheduling.
 

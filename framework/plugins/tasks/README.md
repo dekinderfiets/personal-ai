@@ -108,14 +108,14 @@ The `recurrence` field stores cron expressions (5 fields: minute, hour, day-of-m
 | "every hour" | N/A | `0 * * * *` |
 | "every 30 minutes" | N/A | `*/30 * * * *` |
 
-**Cron → Human-Readable Translation (for list output):**
+**Cron → Human-Readable Translation (convert UTC back to Israel time for display):**
 
-| Cron Expression | Display As |
-|-----------------|------------|
-| `0 9 * * *` | "Daily at 9:00 AM" |
-| `0 9 * * 1` | "Every Monday at 9:00 AM" |
-| `0 9 * * 1-5` | "Weekdays at 9:00 AM" |
-| `0 9 1 * *` | "Monthly on the 1st at 9:00 AM" |
+| Cron Expression (UTC) | Display As (Israel Time) |
+|-----------------------|--------------------------|
+| `0 7 * * *` | "Daily at 9:00 AM" |
+| `0 7 * * 1` | "Every Monday at 9:00 AM" |
+| `0 7 * * 1-5` | "Weekdays at 9:00 AM" |
+| `0 7 1 * *` | "Monthly on the 1st at 9:00 AM" |
 
 ### Scheduling Logic (Natural Language Times)
 

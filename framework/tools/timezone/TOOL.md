@@ -3,7 +3,7 @@ name: timezone
 description: Convert between user timezone (Israel/Asia/Jerusalem) and UTC. Essential for plugins handling dates and times - parse input as Israel time, store in UTC, display in Israel time.
 ---
 
-# Timezone Skill
+# Timezone Tool
 
 Handle timezone conversion between Israel time (Asia/Jerusalem) and UTC.
 
@@ -102,9 +102,9 @@ TZ="Asia/Jerusalem" date -j -f "%Y-%m-%dT%H:%M:%S" "$ISRAEL_TIME" +%s | \
 
 ## Cron Times
 
-Cron expressions in recurrence fields should use **Israel time hours**. The external workflow executing the cron will handle timezone appropriately.
+Cron expressions MUST also be stored in **UTC**, just like `execute_at`. Convert user's Israel time to UTC before generating the cron expression.
 
-| Cron | Meaning |
-|------|---------|
-| `0 9 * * *` | 9:00 AM Israel time daily |
-| `0 7 * * 1` | 7:00 AM Israel time every Monday |
+| User Says | Cron (UTC) | Meaning |
+|-----------|------------|---------|
+| "every day at 9am" | `0 7 * * *` | 7:00 UTC = 9:00 AM Israel (winter) |
+| "every Monday at 7am" | `0 5 * * 1` | 5:00 UTC = 7:00 AM Israel (winter) |

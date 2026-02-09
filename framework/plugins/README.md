@@ -12,7 +12,7 @@ plugins/
 │   ├── README.md       # Plugin description, capabilities, and instructions
 │   └── skills/         # (Optional) Plugin-specific skills
 │       └── {skill}/
-│           └── SKILL.md
+│           └── README.md
 ```
 
 ## Creating a New Plugin
