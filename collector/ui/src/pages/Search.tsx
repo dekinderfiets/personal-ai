@@ -415,6 +415,7 @@ const Search: React.FC = () => {
                   <MenuItem value="event">Event</MenuItem>
                   <MenuItem value="pull_request">Pull Request</MenuItem>
                   <MenuItem value="comment">Comment</MenuItem>
+                  <MenuItem value="file">File</MenuItem>
                 </Select>
               </FormControl>
               <Box sx={{ width: 180 }}>

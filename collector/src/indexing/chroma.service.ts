@@ -2,6 +2,8 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChromaClient, Collection, EmbeddingFunction } from 'chromadb';
 import type { Where, Metadata } from 'chromadb';
+
+type IncludeField = 'documents' | 'metadatas' | 'distances' | 'embeddings' | 'uris';
 import axios from 'axios';
 import { DataSource, IndexDocument, SearchResult, NavigationResult } from '../types';
 
@@ -217,12 +219,28 @@ export class ChromaService implements OnModuleInit {
             }
         }
 
+        // Deduplicate chunks: keep only the highest-scoring chunk per parent document
+        const parentBest = new Map<string, SearchResult>();
+        const deduped: SearchResult[] = [];
+        for (const r of allResults) {
+            const parentId = r.metadata.parentDocId as string | undefined;
+            if (parentId) {
+                const existing = parentBest.get(parentId);
+                if (!existing || r.score > existing.score) {
+                    parentBest.set(parentId, r);
+                }
+            } else {
+                deduped.push(r);
+            }
+        }
+        deduped.push(...parentBest.values());
+
         // Sort by score descending
-        allResults.sort((a, b) => b.score - a.score);
+        deduped.sort((a, b) => b.score - a.score);
 
         return {
-            results: allResults.slice(offset, offset + limit),
-            total: allResults.length,
+            results: deduped.slice(offset, offset + limit),
+            total: deduped.length,
         };
     }
 
@@ -233,9 +251,10 @@ export class ChromaService implements OnModuleInit {
         limit: number,
         whereClause?: Where,
     ): Promise<SearchResult[]> {
-        const queryArgs: { queryTexts: string[]; nResults: number; where?: Where } = {
+        const queryArgs: { queryTexts: string[]; nResults: number; where?: Where; include: IncludeField[] } = {
             queryTexts: [query],
             nResults: limit,
+            include: ['documents', 'metadatas', 'distances'] as IncludeField[],
         };
         if (whereClause) queryArgs.where = whereClause;
 
@@ -259,9 +278,10 @@ export class ChromaService implements OnModuleInit {
             ? { $contains: terms[0] }
             : { $and: terms.map(t => ({ $contains: t })) };
 
-        const getArgs: { limit: number; whereDocument: any; where?: Where } = {
+        const getArgs: { limit: number; whereDocument: any; where?: Where; include: IncludeField[] } = {
             limit,
             whereDocument,
+            include: ['documents', 'metadatas'] as IncludeField[],
         };
         if (whereClause) getArgs.where = whereClause;
 
@@ -284,27 +304,45 @@ export class ChromaService implements OnModuleInit {
         limit: number,
         whereClause?: Where,
     ): Promise<SearchResult[]> {
-        // Run vector and keyword searches in parallel
+        // Over-fetch from each method for better recall before RRF fusion
+        const fetchLimit = limit * 2;
+
         const [vectorResults, keywordResults] = await Promise.all([
-            this.vectorSearch(collection, source, query, limit, whereClause),
-            this.keywordSearch(collection, source, query, limit, whereClause),
+            this.vectorSearch(collection, source, query, fetchLimit, whereClause),
+            this.keywordSearch(collection, source, query, fetchLimit, whereClause),
         ]);
 
-        // Merge results: boost documents that appear in both sets
-        const resultMap = new Map<string, SearchResult>();
+        // Reciprocal Rank Fusion (RRF)
+        // RRF_score(d) = 1/(k + rank_vector(d)) + 1/(k + rank_keyword(d))
+        const k = 60;
 
-        for (const r of vectorResults) {
-            resultMap.set(r.id, r);
+        // Build rank maps (1-indexed ranks, sorted by score descending)
+        const vectorRank = new Map<string, number>();
+        vectorResults
+            .sort((a, b) => b.score - a.score)
+            .forEach((r, i) => vectorRank.set(r.id, i + 1));
+
+        const keywordRank = new Map<string, number>();
+        keywordResults
+            .sort((a, b) => b.score - a.score)
+            .forEach((r, i) => keywordRank.set(r.id, i + 1));
+
+        // Collect all unique documents
+        const resultMap = new Map<string, SearchResult>();
+        for (const r of vectorResults) resultMap.set(r.id, r);
+        for (const r of keywordResults) {
+            if (!resultMap.has(r.id)) resultMap.set(r.id, r);
         }
 
-        for (const r of keywordResults) {
-            const existing = resultMap.get(r.id);
-            if (existing) {
-                // Found in both — boost the score (average of vector + keyword with bonus)
-                existing.score = (existing.score + r.score) / 2 + 0.1;
-            } else {
-                resultMap.set(r.id, r);
-            }
+        // Compute RRF scores and normalize to 0-1
+        const maxRrf = 2 / (k + 1);
+        for (const [id, result] of resultMap) {
+            let rrfScore = 0;
+            const vRank = vectorRank.get(id);
+            const kRank = keywordRank.get(id);
+            if (vRank !== undefined) rrfScore += 1 / (k + vRank);
+            if (kRank !== undefined) rrfScore += 1 / (k + kRank);
+            result.score = rrfScore / maxRrf;
         }
 
         return Array.from(resultMap.values());
@@ -330,8 +368,9 @@ export class ChromaService implements OnModuleInit {
 
     private computeKeywordScore(content: string, terms: string[]): number {
         const lower = content.toLowerCase();
+        const docLength = lower.length;
         let matchedTerms = 0;
-        let totalOccurrences = 0;
+        let tfSum = 0;
 
         for (const term of terms) {
             let idx = 0;
@@ -342,16 +381,21 @@ export class ChromaService implements OnModuleInit {
             }
             if (count > 0) {
                 matchedTerms++;
-                totalOccurrences += count;
+                // TF with diminishing returns: 1 + log(count)
+                tfSum += 1 + Math.log(count);
             }
         }
 
-        // Base score from term coverage (how many query terms matched)
-        const coverageScore = matchedTerms / terms.length;
-        // Bonus from frequency (diminishing returns via log)
-        const frequencyBonus = Math.min(0.2, Math.log1p(totalOccurrences) * 0.05);
+        if (matchedTerms === 0) return 0;
 
-        return Math.min(1, coverageScore * 0.8 + frequencyBonus);
+        // Coverage: fraction of query terms found in the document
+        const coverage = matchedTerms / terms.length;
+        // Normalized TF: average log-TF per matched term, capped at 1
+        const normalizedTF = Math.min(1, tfSum / matchedTerms / 3);
+        // Length normalization: penalize very long docs where terms appear by chance
+        const lengthFactor = 1 / (1 + Math.log(docLength / 2000));
+
+        return coverage * 0.6 + normalizedTF * 0.3 + lengthFactor * 0.1;
     }
 
     private buildWhereClause(
