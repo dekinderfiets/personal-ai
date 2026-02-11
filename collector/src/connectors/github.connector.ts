@@ -599,7 +599,7 @@ export class GitHubConnector extends BaseConnector {
             for (let i = 0; i < candidateFiles.length; i += FILE_FETCH_BATCH_SIZE) {
                 const batch = candidateFiles.slice(i, i + FILE_FETCH_BATCH_SIZE);
                 const batchResults = await Promise.allSettled(
-                    batch.map(item => this.fetchFileContent(repoFullName, item, owner, repo)),
+                    batch.map(item => this.fetchFileContent(repoFullName, item, owner, repo, branch)),
                 );
 
                 for (const result of batchResults) {
@@ -651,6 +651,7 @@ export class GitHubConnector extends BaseConnector {
         item: GitHubTreeItem,
         owner: string,
         repo: string,
+        branch: string,
     ): Promise<GitHubDocument | null> {
         try {
             const response = await this.api.get<string>(
@@ -658,7 +659,7 @@ export class GitHubConnector extends BaseConnector {
                 {
                     headers: { Accept: 'application/vnd.github.raw+json' },
                     responseType: 'text',
-                    params: { ref: item.sha },
+                    params: { ref: branch },
                 },
             );
 
