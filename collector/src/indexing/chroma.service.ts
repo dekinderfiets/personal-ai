@@ -186,6 +186,7 @@ export class ChromaService implements OnModuleInit {
     ): Promise<{ results: SearchResult[]; total: number }> {
         const {
             sources = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar', 'github'] as DataSource[],
+            searchType = 'vector',
             limit = 20,
             offset = 0,
             where,
@@ -198,37 +199,18 @@ export class ChromaService implements OnModuleInit {
         for (const source of sources) {
             try {
                 const collection = await this.getOrCreateCollection(source);
-
                 const whereClause = this.buildWhereClause(where, startDate, endDate);
+                const fetchLimit = limit + offset;
 
-                const queryArgs: {
-                    queryTexts: string[];
-                    nResults: number;
-                    where?: Where;
-                } = {
-                    queryTexts: [query],
-                    nResults: limit + offset,
-                };
-
-                if (whereClause) {
-                    queryArgs.where = whereClause;
-                }
-
-                const results = await collection.query(queryArgs);
-
-                if (results.ids[0]) {
-                    for (let i = 0; i < results.ids[0].length; i++) {
-                        const distance = results.distances?.[0]?.[i] ?? 1;
-                        const score = 1 / (1 + distance);
-
-                        allResults.push({
-                            id: results.ids[0][i],
-                            source,
-                            content: results.documents?.[0]?.[i] || '',
-                            metadata: (results.metadatas?.[0]?.[i] as Record<string, unknown>) || {},
-                            score,
-                        });
-                    }
+                if (searchType === 'vector') {
+                    const results = await this.vectorSearch(collection, source, query, fetchLimit, whereClause);
+                    allResults.push(...results);
+                } else if (searchType === 'keyword') {
+                    const results = await this.keywordSearch(collection, source, query, fetchLimit, whereClause);
+                    allResults.push(...results);
+                } else if (searchType === 'hybrid') {
+                    const results = await this.hybridSearch(collection, source, query, fetchLimit, whereClause);
+                    allResults.push(...results);
                 }
             } catch (error) {
                 this.logger.warn(`Search failed for source ${source}: ${(error as Error).message}`);
@@ -242,6 +224,134 @@ export class ChromaService implements OnModuleInit {
             results: allResults.slice(offset, offset + limit),
             total: allResults.length,
         };
+    }
+
+    private async vectorSearch(
+        collection: Collection,
+        source: DataSource,
+        query: string,
+        limit: number,
+        whereClause?: Where,
+    ): Promise<SearchResult[]> {
+        const queryArgs: { queryTexts: string[]; nResults: number; where?: Where } = {
+            queryTexts: [query],
+            nResults: limit,
+        };
+        if (whereClause) queryArgs.where = whereClause;
+
+        const results = await collection.query(queryArgs);
+        return this.parseQueryResults(results, source);
+    }
+
+    private async keywordSearch(
+        collection: Collection,
+        source: DataSource,
+        query: string,
+        limit: number,
+        whereClause?: Where,
+    ): Promise<SearchResult[]> {
+        // Split query into individual terms for multi-word matching
+        const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 1);
+        if (terms.length === 0) return [];
+
+        // Build where_document filter — match documents containing all terms
+        const whereDocument = terms.length === 1
+            ? { $contains: terms[0] }
+            : { $and: terms.map(t => ({ $contains: t })) };
+
+        const getArgs: { limit: number; whereDocument: any; where?: Where } = {
+            limit,
+            whereDocument,
+        };
+        if (whereClause) getArgs.where = whereClause;
+
+        const results = await collection.get(getArgs);
+
+        return results.ids.map((id, i) => ({
+            id,
+            source,
+            content: results.documents?.[i] || '',
+            metadata: (results.metadatas?.[i] as Record<string, unknown>) || {},
+            // Score keyword matches by how many terms appear, normalized to 0-1
+            score: this.computeKeywordScore(results.documents?.[i] || '', terms),
+        }));
+    }
+
+    private async hybridSearch(
+        collection: Collection,
+        source: DataSource,
+        query: string,
+        limit: number,
+        whereClause?: Where,
+    ): Promise<SearchResult[]> {
+        // Run vector and keyword searches in parallel
+        const [vectorResults, keywordResults] = await Promise.all([
+            this.vectorSearch(collection, source, query, limit, whereClause),
+            this.keywordSearch(collection, source, query, limit, whereClause),
+        ]);
+
+        // Merge results: boost documents that appear in both sets
+        const resultMap = new Map<string, SearchResult>();
+
+        for (const r of vectorResults) {
+            resultMap.set(r.id, r);
+        }
+
+        for (const r of keywordResults) {
+            const existing = resultMap.get(r.id);
+            if (existing) {
+                // Found in both — boost the score (average of vector + keyword with bonus)
+                existing.score = (existing.score + r.score) / 2 + 0.1;
+            } else {
+                resultMap.set(r.id, r);
+            }
+        }
+
+        return Array.from(resultMap.values());
+    }
+
+    private parseQueryResults(results: any, source: DataSource): SearchResult[] {
+        const parsed: SearchResult[] = [];
+        if (results.ids[0]) {
+            for (let i = 0; i < results.ids[0].length; i++) {
+                const distance = results.distances?.[0]?.[i] ?? 1;
+                const score = 1 / (1 + distance);
+                parsed.push({
+                    id: results.ids[0][i],
+                    source,
+                    content: results.documents?.[0]?.[i] || '',
+                    metadata: (results.metadatas?.[0]?.[i] as Record<string, unknown>) || {},
+                    score,
+                });
+            }
+        }
+        return parsed;
+    }
+
+    private computeKeywordScore(content: string, terms: string[]): number {
+        const lower = content.toLowerCase();
+        let matchedTerms = 0;
+        let totalOccurrences = 0;
+
+        for (const term of terms) {
+            let idx = 0;
+            let count = 0;
+            while ((idx = lower.indexOf(term, idx)) !== -1) {
+                count++;
+                idx += term.length;
+            }
+            if (count > 0) {
+                matchedTerms++;
+                totalOccurrences += count;
+            }
+        }
+
+        // Base score from term coverage (how many query terms matched)
+        const coverageScore = matchedTerms / terms.length;
+        // Bonus from frequency (diminishing returns via log)
+        const frequencyBonus = Math.min(0.2, Math.log1p(totalOccurrences) * 0.05);
+
+        return Math.min(1, coverageScore * 0.8 + frequencyBonus);
     }
 
     private buildWhereClause(
