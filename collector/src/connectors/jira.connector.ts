@@ -78,7 +78,7 @@ export class JiraConnector extends BaseConnector {
             return { documents: [], newCursor: {}, hasMore: false };
         }
 
-        const startAt = cursor?.syncToken ? parseInt(cursor.syncToken) : 0;
+        const nextPageToken = cursor?.syncToken || undefined;
 
         // Build JQL query
         let jql = 'ORDER BY updated ASC';
@@ -100,22 +100,30 @@ export class JiraConnector extends BaseConnector {
         }
 
         try {
-            const response = await axios.get<{
+            const body: Record<string, any> = {
+                jql,
+                maxResults: this.pageSize,
+                expand: 'renderedFields',
+                fields: [
+                    'summary', 'description', 'issuetype', 'status', 'priority',
+                    'assignee', 'reporter', 'labels', 'components', 'project',
+                    'created', 'updated', 'comment', this.sprintFieldId,
+                ],
+            };
+            if (nextPageToken) {
+                body.nextPageToken = nextPageToken;
+            }
+
+            const response = await axios.post<{
                 issues: JiraIssue[];
                 total: number;
                 maxResults: number;
-                startAt: number;
-            }>(`${this.baseUrl}/rest/api/3/search`, {
+                nextPageToken?: string;
+            }>(`${this.baseUrl}/rest/api/3/search/jql`, body, {
                 headers: {
                     'Authorization': this.authHeader,
                     'Accept': 'application/json',
-                },
-                params: {
-                    jql,
-                    startAt,
-                    maxResults: this.pageSize,
-                    expand: 'renderedFields',
-                    fields: `summary,description,issuetype,status,priority,assignee,reporter,labels,components,project,created,updated,comment,${this.sprintFieldId}`,
+                    'Content-Type': 'application/json',
                 },
             });
 
@@ -178,8 +186,7 @@ export class JiraConnector extends BaseConnector {
                 }
             }
 
-            const hasMore = startAt + response.data.issues.length < response.data.total;
-            const newStartAt = startAt + response.data.issues.length;
+            const hasMore = !!response.data.nextPageToken;
 
             // Get the updatedAt timestamp of the last issue in this batch for the cursor
             const lastIssue = response.data.issues[response.data.issues.length - 1];
@@ -189,26 +196,17 @@ export class JiraConnector extends BaseConnector {
                 documents,
                 newCursor: {
                     source: this.getSourceName() as DataSource,
-                    syncToken: hasMore ? newStartAt.toString() : undefined,
-                    lastSync: batchLastSync || cursor?.lastSync, // Use batchLastSync if available, otherwise keep previous
+                    syncToken: response.data.nextPageToken || undefined,
+                    lastSync: batchLastSync || cursor?.lastSync,
                 },
                 hasMore,
                 batchLastSync,
             };
         } catch (error) {
-            if (axios.isAxiosError(error) && error.response?.status === 410) {
-                this.logger.warn(`Jira API returned 410 Gone (startAt=${startAt}). Aborting this sync cycle.`);
-                return {
-                    documents: [],
-                    newCursor: {
-                        source: this.getSourceName() as DataSource,
-                        // Keep existing cursor to try again later
-                        lastSync: cursor?.lastSync
-                    },
-                    hasMore: false
-                };
-            }
             this.logger.error(`Failed to fetch from Jira: ${error.message}`);
+            if (axios.isAxiosError(error) && error.response) {
+                this.logger.error(`Jira API response: ${JSON.stringify(error.response.data)}`);
+            }
             throw error;
         }
     }

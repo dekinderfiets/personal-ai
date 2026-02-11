@@ -4,7 +4,7 @@ import { SettingsService } from '../indexing/settings.service';
 import { DataSource, IndexRequest, IndexResponse, IndexStatus, SourceSettings } from '../types';
 import { ApiKeyGuard } from '../auth/api-key.guard';
 
-const VALID_SOURCES: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar'];
+const VALID_SOURCES: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar', 'github'];
 
 @Controller('index')
 @UseGuards(ApiKeyGuard)
@@ -79,5 +79,64 @@ export class IndexController {
         }
         await this.indexingService.deleteDocument(source as DataSource, id);
         return { message: `Document ${id} deleted from ${source}` };
+    }
+
+    // --- Settings Endpoints ---
+
+    @Get('settings/:source')
+    async getSettings(@Param('source') source: string): Promise<SourceSettings | null> {
+        if (!VALID_SOURCES.includes(source as DataSource)) {
+            throw new HttpException(`Invalid source: ${source}`, HttpStatus.BAD_REQUEST);
+        }
+        return this.settingsService.getSettings(source as DataSource);
+    }
+
+    @Post('settings/:source')
+    async saveSettings(
+        @Param('source') source: string,
+        @Body() settings: SourceSettings,
+    ): Promise<{ message: string }> {
+        if (!VALID_SOURCES.includes(source as DataSource)) {
+            throw new HttpException(`Invalid source: ${source}`, HttpStatus.BAD_REQUEST);
+        }
+        await this.settingsService.saveSettings(source as DataSource, settings);
+        return { message: `Settings saved for ${source}` };
+    }
+
+    // --- Discovery Endpoints ---
+
+    @Get('discovery/jira/projects')
+    async discoverJiraProjects(): Promise<any[]> {
+        return this.indexingService.getJiraProjects();
+    }
+
+    @Get('discovery/slack/channels')
+    async discoverSlackChannels(): Promise<any[]> {
+        return this.indexingService.getSlackChannels();
+    }
+
+    @Get('discovery/drive/folders')
+    async discoverDriveFolders(@Query('parentId') parentId?: string): Promise<any[]> {
+        return this.indexingService.getDriveFolders(parentId);
+    }
+
+    @Get('discovery/confluence/spaces')
+    async discoverConfluenceSpaces(): Promise<any[]> {
+        return this.indexingService.getConfluenceSpaces();
+    }
+
+    @Get('discovery/calendar')
+    async discoverCalendars(): Promise<any[]> {
+        return this.indexingService.getCalendars();
+    }
+
+    @Get('discovery/gmail/labels')
+    async discoverGmailLabels(): Promise<any[]> {
+        return this.indexingService.getGmailLabels();
+    }
+
+    @Get('discovery/github/repos')
+    async discoverGitHubRepos(): Promise<any[]> {
+        return this.indexingService.getGitHubRepositories();
     }
 }

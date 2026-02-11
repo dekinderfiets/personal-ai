@@ -1,43 +1,54 @@
-# Stage 1: Builder
-FROM node:20-alpine AS builder
+# Stage: Development (hot-reload)
+FROM node:20-slim AS development
+
+RUN apt-get update && apt-get install -y --no-install-recommends pandoc poppler-utils && rm -rf /var/lib/apt/lists/*
+RUN corepack enable
 
 WORKDIR /app
 
-# Copy package.json and package-lock.json to install dependencies
+# Install backend dependencies
 COPY package.json package-lock.json ./
-
-# Install dependencies
 RUN npm ci
 
 # Install UI dependencies
-COPY ui/package.json ./ui/
-RUN cd ui && npm install
+COPY ui/package.json ui/pnpm-lock.yaml ./ui/
+RUN cd ui && pnpm install --frozen-lockfile --config.package-import-method=copy
 
-# Copy the rest of the application source code
-COPY . .
+# Source code will be mounted via docker-compose volumes
+EXPOSE 8087 5173
+CMD ["npm", "run", "dev"]
 
-# Build the UI
-RUN cd ui && npm run build
+# Stage 1: Builder
+FROM node:20-slim AS builder
 
-# Build the NestJS application
-RUN npm run build
-
-# Stage 2: Production
-FROM node:20-alpine AS production
+RUN corepack enable
 
 WORKDIR /app
 
-# Copy production dependencies from builder stage
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY ui/package.json ui/pnpm-lock.yaml ./ui/
+RUN cd ui && pnpm install --frozen-lockfile --config.package-import-method=copy
+
+COPY . .
+
+RUN cd ui && pnpm run build
+RUN npm run build
+
+# Stage 2: Production
+FROM node:20-slim AS production
+
+RUN apt-get update && apt-get install -y --no-install-recommends pandoc poppler-utils && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
 COPY --from=builder /app/package.json /app/package-lock.json ./
 RUN npm ci --omit=dev
 
-# Copy the built application
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/ui/dist ./public
 COPY --from=builder /app/.env.example ./.env.example
 
-# Expose the port the NestJS app runs on
 EXPOSE 8087
-
-# Command to run the NestJS application
 CMD ["node", "dist/main"]

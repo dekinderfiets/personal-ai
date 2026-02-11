@@ -27,6 +27,7 @@ export class ConfluenceConnector extends BaseConnector {
     private readonly pageSize = 25;
     private baseUrl: string;
     private authHeader: string;
+    private seenPageIds = new Set<string>();
 
     constructor(private configService: ConfigService) {
         super();
@@ -78,6 +79,7 @@ export class ConfluenceConnector extends BaseConnector {
                     limit: this.pageSize,
                     expand: 'body.storage,history,space,ancestors,metadata.labels,_links.webui,children.comment.body.storage,children.comment.history,children.comment.history.lastUpdated',
                 },
+                timeout: 30000,
             });
 
             for (const page of response.data.results as ConfluencePage[]) {
@@ -134,8 +136,22 @@ export class ConfluenceConnector extends BaseConnector {
                 }
             }
 
-            const isLastPage = response.data.size < this.pageSize;
+            // Detect cycling: Confluence API may return the same results after exhausting all pages
+            const pageIds = (response.data.results as ConfluencePage[]).map(p => p.id);
+            const allSeen = pageIds.length > 0 && pageIds.every(id => this.seenPageIds.has(id));
+            pageIds.forEach(id => this.seenPageIds.add(id));
+
+            const hasNextLink = !!response.data._links?.next;
+            const isLastPage = allSeen || !hasNextLink || response.data.size < this.pageSize;
             const nextStart = start + response.data.size;
+
+            if (allSeen) {
+                this.logger.log(`Confluence: detected result cycling at start=${start}, stopping. Total unique pages seen: ${this.seenPageIds.size}`);
+                this.seenPageIds.clear();
+            }
+            if (isLastPage) {
+                this.seenPageIds.clear();
+            }
 
             // Get the updatedAt timestamp of the last page in this batch for the cursor
             const lastPage = response.data.results[response.data.results.length - 1];

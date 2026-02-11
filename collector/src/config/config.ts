@@ -45,3 +45,22 @@ export const confluenceConfig = registerAs('confluence', () => ({
     apiToken: process.env.ATLASSIAN_API_TOKEN,
     spacesToIndex: [],
 }));
+
+export const githubConfig = registerAs('github', () => ({
+    token: process.env.GITHUB_TOKEN,
+    username: process.env.GITHUB_USERNAME,
+}));
+
+export const chromaConfig = registerAs('chroma', () => ({
+    url: process.env.CHROMA_URL || 'http://localhost:8001',
+}));
+
+export const openaiConfig = registerAs('openai', () => ({
+    apiKey: process.env.OPENAI_API_KEY,
+}));
+
+export const temporalConfig = registerAs('temporal', () => ({
+    address: process.env.TEMPORAL_ADDRESS || '',
+    namespace: process.env.TEMPORAL_NAMESPACE || 'default',
+    taskQueue: process.env.TEMPORAL_TASK_QUEUE || 'collector-indexing',
+}));

@@ -1,5 +1,5 @@
 // Data Source Types
-export type DataSource = 'jira' | 'slack' | 'gmail' | 'drive' | 'confluence' | 'calendar';
+export type DataSource = 'jira' | 'slack' | 'gmail' | 'drive' | 'confluence' | 'calendar' | 'github';
 
 // Base Document Interface
 export interface BaseDocument {
@@ -31,6 +31,11 @@ export interface JiraDocument extends BaseDocument {
         url: string;
         parentId?: string;
         search_context?: string;
+        // Relevance weights
+        relevance_score?: number;
+        is_assigned_to_me?: boolean;
+        priority_weight?: number;
+        days_since_update?: number;
     };
 }
 
@@ -53,6 +58,11 @@ export interface SlackDocument extends BaseDocument {
         url: string;
         parentId?: string;
         search_context?: string;
+        // Relevance weights
+        relevance_score?: number;
+        channel_type?: 'dm' | 'private' | 'public' | 'mpim';
+        is_thread_participant?: boolean;
+        mention_count?: number;
     };
 }
 
@@ -73,6 +83,11 @@ export interface GmailDocument extends BaseDocument {
         date: string;
         url: string;
         search_context?: string;
+        // Relevance weights
+        relevance_score?: number;
+        is_internal?: boolean;
+        thread_depth?: number;
+        recipient_count?: number;
     };
 }
 
@@ -92,6 +107,10 @@ export interface DriveDocument extends BaseDocument {
         modifiedAt: string;
         url: string;
         search_context?: string;
+        // Relevance weights
+        relevance_score?: number;
+        is_owner?: boolean;
+        days_since_modified?: number;
     };
 }
 
@@ -113,6 +132,10 @@ export interface ConfluenceDocument extends BaseDocument {
         url: string;
         parentId?: string;
         search_context?: string;
+        // Relevance weights
+        relevance_score?: number;
+        label_count?: number;
+        hierarchy_depth?: number;
     };
 }
 
@@ -136,10 +159,42 @@ export interface CalendarDocument extends BaseDocument {
         createdAt?: string;
         updatedAt?: string;
         search_context?: string;
+        // Relevance weights
+        relevance_score?: number;
+        is_organizer?: boolean;
+        attendee_count?: number;
+        is_recurring?: boolean;
     };
 }
 
-export type IndexDocument = JiraDocument | SlackDocument | GmailDocument | DriveDocument | ConfluenceDocument | CalendarDocument;
+// GitHub Document
+export interface GitHubDocument extends BaseDocument {
+    source: 'github';
+    metadata: {
+        id: string;
+        source: 'github';
+        type: 'repository' | 'issue' | 'pull_request' | 'pr_review' | 'pr_comment';
+        title: string;
+        repo: string;
+        number?: number;
+        state?: string;
+        author: string;
+        labels?: string[];
+        milestone?: string | null;
+        assignees?: string[];
+        createdAt: string;
+        updatedAt: string;
+        url: string;
+        parentId?: string;
+        search_context?: string;
+        // Relevance weights
+        relevance_score?: number;
+        is_assigned_to_me?: boolean;
+        is_author?: boolean;
+    };
+}
+
+export type IndexDocument = JiraDocument | SlackDocument | GmailDocument | DriveDocument | ConfluenceDocument | CalendarDocument | GitHubDocument;
 
 // Cursor/Checkpoint Types
 export interface Cursor {
@@ -161,6 +216,7 @@ export interface IndexRequest {
     folderIds?: string[];      // For Drive
     gmailSettings?: GmailSettings;
     calendarIds?: string[];    // For Calendar
+    repos?: string[];          // For GitHub
 }
 
 export interface IndexStatus {
@@ -206,7 +262,11 @@ export interface CalendarSettings {
     calendarIds: string[];
 }
 
-export type SourceSettings = DriveSettings | GmailSettings | SlackSettings | JiraSettings | ConfluenceSettings | CalendarSettings;
+export interface GitHubSettings {
+    repos: string[];
+}
+
+export type SourceSettings = DriveSettings | GmailSettings | SlackSettings | JiraSettings | ConfluenceSettings | CalendarSettings | GitHubSettings;
 
 // Connector Interface
 export interface ConnectorResult {
@@ -216,3 +276,41 @@ export interface ConnectorResult {
     batchLastSync?: string; // The timestamp of the last item in this batch
 }
 
+// Search Types
+export interface SearchRequest {
+    query: string;
+    sources?: DataSource[];
+    searchType?: 'vector' | 'keyword' | 'hybrid';
+    limit?: number;
+    offset?: number;
+    where?: Record<string, unknown>;
+    startDate?: string;
+    endDate?: string;
+}
+
+export interface SearchResult {
+    id: string;
+    source: DataSource;
+    content: string;
+    metadata: Record<string, unknown>;
+    score: number;
+}
+
+// Navigation Types
+export interface NavigationRequest {
+    documentId: string;
+    direction: 'prev' | 'next' | 'siblings' | 'parent' | 'children';
+    scope: 'chunk' | 'datapoint' | 'context';
+    limit?: number;
+}
+
+export interface NavigationResult {
+    current: SearchResult | null;
+    related: SearchResult[];
+    navigation: {
+        hasPrev: boolean;
+        hasNext: boolean;
+        parentId: string | null;
+        contextType: string;
+    };
+}

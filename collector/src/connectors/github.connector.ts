@@ -1,0 +1,473 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import axios, { AxiosInstance } from 'axios';
+import { BaseConnector } from './base.connector';
+import { Cursor, IndexRequest, ConnectorResult, IndexDocument, GitHubDocument, DataSource } from '../types';
+
+interface GitHubRepo {
+    id: number;
+    full_name: string;
+    name: string;
+    description: string | null;
+    html_url: string;
+    owner: { login: string };
+    language: string | null;
+    topics: string[];
+    created_at: string;
+    updated_at: string;
+    pushed_at: string;
+    private: boolean;
+    fork: boolean;
+    stargazers_count: number;
+    default_branch: string;
+}
+
+interface GitHubIssue {
+    id: number;
+    number: number;
+    title: string;
+    body: string | null;
+    state: string;
+    user: { login: string };
+    labels: { name: string }[];
+    milestone: { title: string } | null;
+    assignees: { login: string }[];
+    html_url: string;
+    created_at: string;
+    updated_at: string;
+    pull_request?: { url: string };
+}
+
+interface GitHubPR {
+    id: number;
+    number: number;
+    title: string;
+    body: string | null;
+    state: string;
+    user: { login: string };
+    labels: { name: string }[];
+    milestone: { title: string } | null;
+    assignees: { login: string }[];
+    html_url: string;
+    created_at: string;
+    updated_at: string;
+    merged_at: string | null;
+    draft: boolean;
+    head: { ref: string };
+    base: { ref: string };
+}
+
+interface GitHubReview {
+    id: number;
+    user: { login: string };
+    body: string | null;
+    state: string;
+    html_url: string;
+    submitted_at: string;
+}
+
+interface GitHubComment {
+    id: number;
+    user: { login: string };
+    body: string;
+    html_url: string;
+    created_at: string;
+    updated_at: string;
+}
+
+@Injectable()
+export class GitHubConnector extends BaseConnector {
+    private readonly logger = new Logger(GitHubConnector.name);
+    private readonly token: string;
+    private readonly username: string;
+    private api: AxiosInstance;
+
+    constructor(private configService: ConfigService) {
+        super();
+        this.token = this.configService.get<string>('github.token') || '';
+        this.username = this.configService.get<string>('github.username') || '';
+
+        this.api = axios.create({
+            baseURL: 'https://api.github.com',
+            headers: {
+                ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+                Accept: 'application/vnd.github+json',
+                'X-GitHub-Api-Version': '2022-11-28',
+            },
+        });
+    }
+
+    getSourceName(): string {
+        return 'github';
+    }
+
+    isConfigured(): boolean {
+        return !!(this.token && this.username);
+    }
+
+    async fetch(cursor: Cursor | null, request: IndexRequest): Promise<ConnectorResult> {
+        if (!this.isConfigured()) {
+            this.logger.warn('GitHub not configured, skipping');
+            return { documents: [], newCursor: {}, hasMore: false };
+        }
+
+        // Parse sync state from cursor
+        let state: {
+            phase: 'repos' | 'issues' | 'prs';
+            repoIdx: number;
+            page: number;
+            repos: string[];
+        };
+
+        if (cursor?.syncToken) {
+            try {
+                state = JSON.parse(cursor.syncToken);
+            } catch {
+                state = { phase: 'repos', repoIdx: 0, page: 1, repos: [] };
+            }
+        } else {
+            state = { phase: 'repos', repoIdx: 0, page: 1, repos: [] };
+        }
+
+        const since = cursor?.lastSync && !request.fullReindex ? cursor.lastSync : undefined;
+
+        // Phase 1: Fetch repos list
+        if (state.phase === 'repos') {
+            const repos = await this.listRepositories(request.repos);
+            state.repos = repos.map(r => r.full_name);
+            state.phase = 'issues';
+            state.repoIdx = 0;
+            state.page = 1;
+
+            // Create repo documents
+            const documents: IndexDocument[] = repos.map(repo => this.repoToDocument(repo));
+
+            return {
+                documents,
+                newCursor: {
+                    source: 'github' as DataSource,
+                    syncToken: JSON.stringify(state),
+                },
+                hasMore: state.repos.length > 0,
+                batchLastSync: new Date().toISOString(),
+            };
+        }
+
+        if (state.repos.length === 0) {
+            return { documents: [], newCursor: {}, hasMore: false };
+        }
+
+        const repoFullName = state.repos[state.repoIdx];
+        const documents: IndexDocument[] = [];
+
+        // Phase 2: Fetch issues (which also includes PRs on GitHub API)
+        if (state.phase === 'issues') {
+            const { items, hasNextPage } = await this.fetchIssuesAndPRs(repoFullName, state.page, since);
+
+            for (const item of items) {
+                if (item.pull_request) {
+                    // It's a PR - fetch full PR details, reviews, and comments
+                    const prDocs = await this.fetchPRDetails(repoFullName, item.number, since);
+                    documents.push(...prDocs);
+                } else {
+                    documents.push(this.issueToDocument(repoFullName, item));
+                }
+            }
+
+            if (hasNextPage) {
+                state.page++;
+            } else {
+                // Move to next repo
+                state.repoIdx++;
+                state.page = 1;
+            }
+
+            const hasMore = state.repoIdx < state.repos.length;
+            if (!hasMore) {
+                // Reset for next incremental run
+                state.phase = 'repos';
+                state.repoIdx = 0;
+                state.page = 1;
+            }
+
+            return {
+                documents,
+                newCursor: {
+                    source: 'github' as DataSource,
+                    syncToken: hasMore ? JSON.stringify(state) : undefined,
+                },
+                hasMore,
+                batchLastSync: new Date().toISOString(),
+            };
+        }
+
+        return { documents: [], newCursor: {}, hasMore: false };
+    }
+
+    async listRepositories(filterRepos?: string[]): Promise<GitHubRepo[]> {
+        if (!this.isConfigured()) return [];
+
+        try {
+            const repos: GitHubRepo[] = [];
+            let page = 1;
+
+            while (true) {
+                const response = await this.api.get<GitHubRepo[]>('/user/repos', {
+                    params: {
+                        sort: 'updated',
+                        direction: 'desc',
+                        per_page: 100,
+                        page,
+                        type: 'all',
+                    },
+                });
+
+                repos.push(...response.data);
+                if (response.data.length < 100) break;
+                page++;
+            }
+
+            if (filterRepos && filterRepos.length > 0) {
+                return repos.filter(r => filterRepos.includes(r.full_name) || filterRepos.includes(r.name));
+            }
+
+            return repos;
+        } catch (error) {
+            this.logger.error(`Failed to list repositories: ${(error as Error).message}`);
+            return [];
+        }
+    }
+
+    private async fetchIssuesAndPRs(
+        repoFullName: string,
+        page: number,
+        since?: string,
+    ): Promise<{ items: GitHubIssue[]; hasNextPage: boolean }> {
+        try {
+            const response = await this.api.get<GitHubIssue[]>(`/repos/${repoFullName}/issues`, {
+                params: {
+                    state: 'all',
+                    sort: 'updated',
+                    direction: 'asc',
+                    per_page: 50,
+                    page,
+                    ...(since ? { since } : {}),
+                },
+            });
+
+            return {
+                items: response.data,
+                hasNextPage: response.data.length === 50,
+            };
+        } catch (error) {
+            this.logger.error(`Failed to fetch issues for ${repoFullName}: ${(error as Error).message}`);
+            return { items: [], hasNextPage: false };
+        }
+    }
+
+    private async fetchPRDetails(
+        repoFullName: string,
+        prNumber: number,
+        since?: string,
+    ): Promise<IndexDocument[]> {
+        const documents: IndexDocument[] = [];
+
+        try {
+            // Fetch PR details
+            const prResponse = await this.api.get<GitHubPR>(`/repos/${repoFullName}/pulls/${prNumber}`);
+            const pr = prResponse.data;
+            documents.push(this.prToDocument(repoFullName, pr));
+
+            // Fetch reviews
+            const reviewsResponse = await this.api.get<GitHubReview[]>(
+                `/repos/${repoFullName}/pulls/${prNumber}/reviews`,
+            );
+            for (const review of reviewsResponse.data) {
+                if (review.body) {
+                    documents.push(this.reviewToDocument(repoFullName, prNumber, pr.title, review));
+                }
+            }
+
+            // Fetch PR comments
+            const commentsResponse = await this.api.get<GitHubComment[]>(
+                `/repos/${repoFullName}/pulls/${prNumber}/comments`,
+                { params: since ? { since } : {} },
+            );
+            for (const comment of commentsResponse.data) {
+                documents.push(this.commentToDocument(repoFullName, prNumber, pr.title, comment));
+            }
+        } catch (error) {
+            this.logger.warn(`Failed to fetch PR #${prNumber} details for ${repoFullName}: ${(error as Error).message}`);
+        }
+
+        return documents;
+    }
+
+    private repoToDocument(repo: GitHubRepo): GitHubDocument {
+        const content = [
+            `# ${repo.full_name}`,
+            '',
+            repo.description || 'No description',
+            '',
+            `- **Language**: ${repo.language || 'Unknown'}`,
+            `- **Topics**: ${repo.topics?.join(', ') || 'None'}`,
+            `- **Stars**: ${repo.stargazers_count}`,
+            `- **Default Branch**: ${repo.default_branch}`,
+            `- **Private**: ${repo.private}`,
+            `- **Fork**: ${repo.fork}`,
+        ].join('\n');
+
+        return {
+            id: `github_repo_${repo.full_name.replace('/', '_')}`,
+            source: 'github',
+            content,
+            metadata: {
+                id: `github_repo_${repo.full_name.replace('/', '_')}`,
+                source: 'github',
+                type: 'repository',
+                title: repo.full_name,
+                repo: repo.full_name,
+                author: repo.owner.login,
+                labels: repo.topics || [],
+                createdAt: repo.created_at,
+                updatedAt: repo.updated_at,
+                url: repo.html_url,
+            },
+        };
+    }
+
+    private issueToDocument(repoFullName: string, issue: GitHubIssue): GitHubDocument {
+        const content = [
+            `# [${repoFullName}#${issue.number}] ${issue.title}`,
+            '',
+            `**State**: ${issue.state}`,
+            `**Author**: ${issue.user.login}`,
+            `**Labels**: ${issue.labels.map(l => l.name).join(', ') || 'None'}`,
+            `**Assignees**: ${issue.assignees.map(a => a.login).join(', ') || 'Unassigned'}`,
+            '',
+            issue.body || 'No description',
+        ].join('\n');
+
+        return {
+            id: `github_issue_${repoFullName.replace('/', '_')}_${issue.number}`,
+            source: 'github',
+            content,
+            metadata: {
+                id: `github_issue_${repoFullName.replace('/', '_')}_${issue.number}`,
+                source: 'github',
+                type: 'issue',
+                title: issue.title,
+                repo: repoFullName,
+                number: issue.number,
+                state: issue.state,
+                author: issue.user.login,
+                labels: issue.labels.map(l => l.name),
+                milestone: issue.milestone?.title || null,
+                assignees: issue.assignees.map(a => a.login),
+                createdAt: issue.created_at,
+                updatedAt: issue.updated_at,
+                url: issue.html_url,
+                is_assigned_to_me: issue.assignees.some(a => a.login === this.username),
+                is_author: issue.user.login === this.username,
+            },
+        };
+    }
+
+    private prToDocument(repoFullName: string, pr: GitHubPR): GitHubDocument {
+        const content = [
+            `# PR [${repoFullName}#${pr.number}] ${pr.title}`,
+            '',
+            `**State**: ${pr.state}${pr.merged_at ? ' (merged)' : ''}`,
+            `**Author**: ${pr.user.login}`,
+            `**Branch**: ${pr.head.ref} → ${pr.base.ref}`,
+            `**Labels**: ${pr.labels.map(l => l.name).join(', ') || 'None'}`,
+            `**Draft**: ${pr.draft}`,
+            '',
+            pr.body || 'No description',
+        ].join('\n');
+
+        return {
+            id: `github_pr_${repoFullName.replace('/', '_')}_${pr.number}`,
+            source: 'github',
+            content,
+            metadata: {
+                id: `github_pr_${repoFullName.replace('/', '_')}_${pr.number}`,
+                source: 'github',
+                type: 'pull_request',
+                title: pr.title,
+                repo: repoFullName,
+                number: pr.number,
+                state: pr.merged_at ? 'merged' : pr.state,
+                author: pr.user.login,
+                labels: pr.labels.map(l => l.name),
+                milestone: pr.milestone?.title || null,
+                assignees: pr.assignees.map(a => a.login),
+                createdAt: pr.created_at,
+                updatedAt: pr.updated_at,
+                url: pr.html_url,
+                is_assigned_to_me: pr.assignees.some(a => a.login === this.username),
+                is_author: pr.user.login === this.username,
+            },
+        };
+    }
+
+    private reviewToDocument(repoFullName: string, prNumber: number, prTitle: string, review: GitHubReview): GitHubDocument {
+        const content = [
+            `## PR Review on ${repoFullName}#${prNumber}: ${prTitle}`,
+            '',
+            `**Reviewer**: ${review.user.login}`,
+            `**State**: ${review.state}`,
+            '',
+            review.body || '',
+        ].join('\n');
+
+        return {
+            id: `github_review_${repoFullName.replace('/', '_')}_${prNumber}_${review.id}`,
+            source: 'github',
+            content,
+            metadata: {
+                id: `github_review_${repoFullName.replace('/', '_')}_${prNumber}_${review.id}`,
+                source: 'github',
+                type: 'pr_review',
+                title: `Review on ${repoFullName}#${prNumber} by ${review.user.login}`,
+                repo: repoFullName,
+                number: prNumber,
+                state: review.state,
+                author: review.user.login,
+                createdAt: review.submitted_at,
+                updatedAt: review.submitted_at,
+                url: review.html_url,
+                parentId: `github_pr_${repoFullName.replace('/', '_')}_${prNumber}`,
+            },
+        };
+    }
+
+    private commentToDocument(repoFullName: string, prNumber: number, prTitle: string, comment: GitHubComment): GitHubDocument {
+        const content = [
+            `## PR Comment on ${repoFullName}#${prNumber}: ${prTitle}`,
+            '',
+            `**Author**: ${comment.user.login}`,
+            '',
+            comment.body,
+        ].join('\n');
+
+        return {
+            id: `github_comment_${repoFullName.replace('/', '_')}_${prNumber}_${comment.id}`,
+            source: 'github',
+            content,
+            metadata: {
+                id: `github_comment_${repoFullName.replace('/', '_')}_${prNumber}_${comment.id}`,
+                source: 'github',
+                type: 'pr_comment',
+                title: `Comment on ${repoFullName}#${prNumber} by ${comment.user.login}`,
+                repo: repoFullName,
+                number: prNumber,
+                author: comment.user.login,
+                createdAt: comment.created_at,
+                updatedAt: comment.updated_at,
+                url: comment.html_url,
+                parentId: `github_pr_${repoFullName.replace('/', '_')}_${prNumber}`,
+            },
+        };
+    }
+}

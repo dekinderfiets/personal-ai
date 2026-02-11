@@ -13,7 +13,7 @@ async function bootstrap() {
     app.enableCors();
 
     // Set a global prefix for all routes
-    app.setGlobalPrefix('api/v1');
+    app.setGlobalPrefix(configService.get<string>('app.globalApiPrefix') || 'api/v1');
 
     await app.listen(port);
     logger.log(`🚀 Indexing service is running on: http://localhost:${port}/api/v1`);

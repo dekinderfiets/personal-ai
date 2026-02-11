@@ -143,9 +143,27 @@ export class DriveConnector extends BaseConnector {
                 batchLastSync,
             };
         } catch (error) {
-            if (axios.isAxiosError(error) && error.response?.status === 400 && error.response?.data?.error?.message?.includes('pageToken')) {
-                this.logger.warn(`Invalid page token for Drive fetch. This usually happens if search query changes between batches. Resetting pagination.`);
-                return { documents: [], newCursor: { lastSync: cursor?.lastSync }, hasMore: false };
+            if (axios.isAxiosError(error) && error.response?.status === 400) {
+                const errorData = error.response?.data?.error;
+                const isPageTokenError =
+                    errorData?.errors?.some((e: any) => e.location === 'pageToken') ||
+                    errorData?.message?.includes('pageToken');
+
+                if (isPageTokenError) {
+                    this.logger.warn(
+                        `Invalid pageToken for Drive fetch — the token is stale or the query changed between batches. ` +
+                        `Resetting pagination to restart from the last known sync time.`,
+                    );
+                    return {
+                        documents: [],
+                        newCursor: {
+                            source: this.getSourceName() as DataSource,
+                            lastSync: cursor?.lastSync,
+                            // Intentionally omit syncToken to clear the stale pageToken
+                        },
+                        hasMore: false,
+                    };
+                }
             }
             this.logger.error(`Failed to fetch from Google Drive: ${error.message}`);
             if (axios.isAxiosError(error) && error.response) {

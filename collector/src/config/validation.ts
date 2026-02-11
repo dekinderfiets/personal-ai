@@ -61,6 +61,34 @@ class EnvironmentVariables {
     @IsString()
     @IsOptional()
     API_KEY: string;
+
+    @IsString()
+    @IsOptional()
+    GITHUB_TOKEN: string;
+
+    @IsString()
+    @IsOptional()
+    GITHUB_USERNAME: string;
+
+    @IsString()
+    @IsOptional()
+    CHROMA_URL: string;
+
+    @IsString()
+    @IsOptional()
+    OPENAI_API_KEY: string;
+
+    @IsString()
+    @IsOptional()
+    TEMPORAL_ADDRESS: string;
+
+    @IsString()
+    @IsOptional()
+    TEMPORAL_NAMESPACE: string;
+
+    @IsString()
+    @IsOptional()
+    TEMPORAL_TASK_QUEUE: string;
 }
 
 export function validate(config: Record<string, unknown>) {

@@ -15,7 +15,7 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://index_service:8087', // Proxy to the backend service container by name
+        target: process.env.API_TARGET || 'http://localhost:8087', // Local dev or Docker container
         changeOrigin: true,
         // rewrite: (path) => path.replace(/^\/api/, '/api'), // No rewrite needed if backend expects /api
       },

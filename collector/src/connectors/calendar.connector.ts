@@ -36,96 +36,58 @@ export class CalendarConnector extends BaseConnector {
 
         try {
             const token = await this.googleAuthService.getAccessToken(['https://www.googleapis.com/auth/calendar.readonly']);
-            const documents: IndexDocument[] = [];
-            let nextPageToken: string | undefined = cursor?.syncToken;
-            let syncToken: string | undefined = undefined; // Google Calendar's true syncToken
 
             const calendarIdsToFetch = request.calendarIds && request.calendarIds.length > 0
                 ? request.calendarIds
-                : ['primary']; // Default to primary calendar if none specified
+                : ['primary'];
 
-            let allEvents: any[] = [];
-            let hasMore = false;
-            let batchLastSync: string | undefined;
+            // Pagination state from cursor metadata
+            const calendarIndex = cursor?.metadata?.calendarIndex ?? 0;
+            const pageToken = cursor?.metadata?.pageToken;
+            const calendarId = calendarIdsToFetch[calendarIndex] || calendarIdsToFetch[0];
 
-            for (const calendarId of calendarIdsToFetch) {
-                let currentCalendarNextPageToken: string | undefined = nextPageToken;
-                let currentCalendarSyncToken: string | undefined = undefined; // per-calendar sync token
+            const params: any = {
+                maxResults: 250,
+                singleEvents: true,
+                orderBy: 'startTime',
+                timeMin: (cursor?.lastSync && !request.fullReindex) ? new Date(cursor.lastSync).toISOString() : undefined,
+            };
 
-                do {
-                    const params: any = {
-                        maxResults: 250, // Max results per page
-                        singleEvents: true, // Expand recurring events
-                        orderBy: 'startTime',
-                        timeMin: (cursor?.lastSync && !request.fullReindex) ? new Date(cursor.lastSync).toISOString() : undefined,
-                    };
+            if (pageToken) {
+                params.pageToken = pageToken;
+            } else if (!request.fullReindex && cursor?.syncToken && !cursor?.metadata?.pageToken) {
+                params.syncToken = cursor.syncToken;
+            }
 
-                    if (currentCalendarNextPageToken) {
-                        params.pageToken = currentCalendarNextPageToken;
-                    } else if (cursor?.metadata?.configKey === calendarId && cursor?.syncToken) {
-                        // Use the full syncToken for the initial fetch if available and not using pageToken
-                        params.syncToken = cursor.syncToken;
-                    }
-
-                    const response = await axios.get(
+            let response;
+            try {
+                response = await axios.get(
+                    `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`,
+                    { headers: { 'Authorization': `Bearer ${token}` }, params },
+                );
+            } catch (error) {
+                if (axios.isAxiosError(error) && error.response?.status === 410) {
+                    this.logger.warn(`Sync token for calendar ${calendarId} is invalid. Re-fetching without syncToken.`);
+                    delete params.syncToken;
+                    delete params.pageToken;
+                    response = await axios.get(
                         `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`,
-                        {
-                            headers: { 'Authorization': `Bearer ${token}` },
-                            params,
-                        },
+                        { headers: { 'Authorization': `Bearer ${token}` }, params },
                     );
-
-                    allEvents.push(...(response.data.items || []));
-                    currentCalendarNextPageToken = response.data.nextPageToken;
-                    currentCalendarSyncToken = response.data.nextSyncToken; // Capture the sync token for this calendar
-
-                    // If we get a 410, syncToken is invalid, clear it and re-fetch without syncToken
-                    if (response.status === 410) {
-                        this.logger.warn(`Sync token for calendar ${calendarId} is invalid. Performing full reindex for this calendar.`);
-                        currentCalendarNextPageToken = undefined; // Reset for re-fetch
-                        currentCalendarSyncToken = undefined; // Clear invalid sync token
-                        params.syncToken = undefined; // Remove from next request
-                        params.pageToken = undefined; // Remove from next request
-                        // Re-fetch without syncToken and pageToken
-                        const fullReindexResponse = await axios.get(
-                            `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`,
-                            {
-                                headers: { 'Authorization': `Bearer ${token}` },
-                                params: {
-                                    maxResults: 250,
-                                    singleEvents: true,
-                                    orderBy: 'startTime',
-                                },
-                            },
-                        );
-                        allEvents.push(...(fullReindexResponse.data.items || []));
-                        currentCalendarNextPageToken = fullReindexResponse.data.nextPageToken;
-                        currentCalendarSyncToken = fullReindexResponse.data.nextSyncToken;
-                    }
-
-
-                    // If any calendar has a nextPageToken, then we potentially have more to fetch in total
-                    if (currentCalendarNextPageToken) {
-                        hasMore = true;
-                    }
-
-                } while (currentCalendarNextPageToken);
-
-                if (currentCalendarSyncToken) {
-                    syncToken = currentCalendarSyncToken; // Take the last sync token encountered
+                } else {
+                    throw error;
                 }
             }
 
+            const events: any[] = response.data.items || [];
+            const nextPageToken: string | undefined = response.data.nextPageToken;
+            const googleSyncToken: string | undefined = response.data.nextSyncToken;
 
-            for (const event of allEvents) {
-                if (event.status === 'cancelled') {
-                    // For cancelled events, we might need to delete them from the index
-                    // For now, we just skip indexing them.
-                    this.logger.log(`Skipping cancelled event: ${event.summary} (${event.id})`);
-                    continue;
-                }
+            const documents: IndexDocument[] = [];
+            for (const event of events) {
+                if (event.status === 'cancelled') continue;
 
-                const doc: IndexDocument = {
+                documents.push({
                     id: event.id,
                     source: 'calendar',
                     content: this.buildEventContent(event),
@@ -147,35 +109,43 @@ export class CalendarConnector extends BaseConnector {
                         updatedAt: event.updated,
                         search_context: `${event.summary || ''} ${event.description || ''} ${event.location || ''} ${event.organizer?.email || ''}`,
                     },
-                };
-                documents.push(doc);
+                });
             }
 
-            // Determine the batchLastSync from the documents that were actually indexed
+            // Determine if there's more: either more pages for this calendar, or more calendars
+            const hasMorePages = !!nextPageToken;
+            const hasMoreCalendars = calendarIndex + 1 < calendarIdsToFetch.length;
+            const hasMore = hasMorePages || hasMoreCalendars;
+
+            // Build the next cursor metadata for pagination
+            const nextCalendarIndex = hasMorePages ? calendarIndex : calendarIndex + 1;
+            const nextCursorPageToken = hasMorePages ? nextPageToken : undefined;
+
+            let batchLastSync: string | undefined;
             if (documents.length > 0) {
-                // Assuming events are ordered by 'updated' or 'startTime' from the API,
-                // the last document's updated date is a good candidate.
-                const lastIndexedEvent = documents.reduce((prev, current) => {
+                const lastDoc = documents.reduce((prev, current) => {
                     const prevDate = new Date((prev.metadata as any).updatedAt || (prev.metadata as any).start);
                     const currDate = new Date((current.metadata as any).updatedAt || (current.metadata as any).start);
                     return (prevDate > currDate) ? prev : current;
                 });
-                batchLastSync = (lastIndexedEvent.metadata as any).updatedAt || (lastIndexedEvent.metadata as any).start;
+                batchLastSync = (lastDoc.metadata as any).updatedAt || (lastDoc.metadata as any).start;
             }
 
+            this.logger.log(`Calendar fetch: calendarId=${calendarId}, page=${pageToken ? 'yes' : 'initial'}, events=${documents.length}, hasMore=${hasMore}`);
 
             return {
                 documents,
                 newCursor: {
                     source: this.getSourceName() as DataSource,
-                    // We only use the syncToken from Google for subsequent full syncs, not for pagination
-                    syncToken: syncToken,
+                    syncToken: googleSyncToken || cursor?.syncToken,
                     lastSync: batchLastSync || cursor?.lastSync,
                     metadata: {
-                        configKey: calendarIdsToFetch.join(',') // Store which calendars were synced
+                        configKey: calendarIdsToFetch.join(','),
+                        calendarIndex: nextCalendarIndex,
+                        pageToken: nextCursorPageToken,
                     }
                 },
-                hasMore: hasMore, // Rely on the overall hasMore flag from all calendars
+                hasMore,
                 batchLastSync,
             };
         } catch (error) {

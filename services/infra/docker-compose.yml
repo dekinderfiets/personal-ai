@@ -23,6 +23,36 @@ services:
     env_file: services/infra/.env
     environment:
       ANONYMIZED_TELEMETRY: false
+    volumes:
+      - chroma-data:/chroma/chroma
+    restart: unless-stopped
+
+  temporal:
+    image: temporalio/auto-setup:latest
+    container_name: personal-ai_temporal
+    depends_on:
+      - postgres
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_SEEDS: postgres
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
+    ports:
+      - "127.0.0.1:7233:7233"
+    restart: unless-stopped
+
+  temporal-ui:
+    image: temporalio/ui:latest
+    container_name: personal-ai_temporal_ui
+    depends_on:
+      - temporal
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "127.0.0.1:8088:8080"
     restart: unless-stopped
 
   caddy:
@@ -50,6 +80,9 @@ volumes:
     external: true
   caddy_config:
     name: personal-ai_caddy_config
+    external: true
+  chroma-data:
+    name: personal-ai_chroma_data
     external: true
 
 networks:

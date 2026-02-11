@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import axios from 'axios';
+import axios, { AxiosRequestConfig } from 'axios';
 import { BaseConnector } from './base.connector';
 import { Cursor, IndexRequest, ConnectorResult, IndexDocument, SlackDocument, DataSource } from '../types';
 
@@ -36,6 +36,9 @@ export class SlackConnector extends BaseConnector implements OnModuleInit {
     private readonly token: string;
     private teamId: string;
     private userCache: Map<string, SlackUser> = new Map();
+    private channelsCache: SlackChannel[] | null = null;
+    private channelsCacheTime: number = 0;
+    private static readonly CHANNELS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
     constructor(private configService: ConfigService) {
         super();
@@ -242,41 +245,44 @@ export class SlackConnector extends BaseConnector implements OnModuleInit {
 
     public async getChannels(channelIds?: string[]): Promise<SlackChannel[]> {
         try {
-            let allChannels: SlackChannel[] = [];
-            let cursor: string | undefined;
+            const now = Date.now();
+            if (!this.channelsCache || now - this.channelsCacheTime > SlackConnector.CHANNELS_CACHE_TTL) {
+                let allChannels: SlackChannel[] = [];
+                let cursor: string | undefined;
 
-            do {
-                const response = await axios.get('https://slack.com/api/conversations.list', {
-                    headers: { 'Authorization': `Bearer ${this.token}` },
-                    params: {
+                do {
+                    const response = await this.slackApi('https://slack.com/api/conversations.list', {
                         types: 'public_channel,private_channel,mpim,im',
                         limit: 1000,
                         cursor,
-                    },
-                });
+                    });
 
-                if (!response.data.ok) throw new Error(response.data.error);
+                    if (!response.data.ok) throw new Error(response.data.error);
 
-                const pageChannels: SlackChannel[] = response.data.channels;
-                allChannels = allChannels.concat(pageChannels);
-                cursor = response.data.response_metadata?.next_cursor;
-            } while (cursor);
+                    const pageChannels: SlackChannel[] = response.data.channels;
+                    allChannels = allChannels.concat(pageChannels);
+                    cursor = response.data.response_metadata?.next_cursor;
+                } while (cursor);
 
-            this.logger.log(`Fetched ${allChannels.length} total channels/DMs from Slack.`);
+                this.logger.log(`Fetched ${allChannels.length} total channels/DMs from Slack.`);
 
-            // Enrich DMs with user names
-            await Promise.all(allChannels.map(async (c: any) => {
-                if (c.is_im && c.user) {
-                    const user = await this.getUser(c.user);
-                    c.name = user?.real_name || user?.name || `DM with ${c.user}`;
-                }
-            }));
+                // Enrich DMs with user names
+                await Promise.all(allChannels.map(async (c: any) => {
+                    if (c.is_im && c.user) {
+                        const user = await this.getUser(c.user);
+                        c.name = user?.real_name || user?.name || `DM with ${c.user}`;
+                    }
+                }));
 
-            // Filter for channels where the user/bot is a member OR it is a DM (which is implicitly joined)
-            const memberChannels = allChannels.filter(c => c.is_member || c.is_im);
-            this.logger.log(`Filtered to ${memberChannels.length} channels where user is a member (or DM).`);
+                // Filter for channels where the user/bot is a member OR it is a DM (which is implicitly joined)
+                const memberChannels = allChannels.filter(c => c.is_member || c.is_im);
+                this.logger.log(`Filtered to ${memberChannels.length} channels where user is a member (or DM).`);
 
-            let channels = memberChannels;
+                this.channelsCache = memberChannels;
+                this.channelsCacheTime = now;
+            }
+
+            let channels = this.channelsCache;
             if (channelIds && channelIds.length > 0) {
                 channels = channels.filter(c => channelIds.includes(c.id));
             }
@@ -290,10 +296,7 @@ export class SlackConnector extends BaseConnector implements OnModuleInit {
 
     private async getChannelMessages(channelId: string, oldest: string, cursor?: string): Promise<{ messages: SlackMessage[]; next_cursor?: string }> {
         try {
-            const response = await axios.get('https://slack.com/api/conversations.history', {
-                headers: { 'Authorization': `Bearer ${this.token}` },
-                params: { channel: channelId, limit: 200, oldest, cursor },
-            });
+            const response = await this.slackApi('https://slack.com/api/conversations.history', { channel: channelId, limit: 200, oldest, cursor });
             if (!response.data.ok) throw new Error(response.data.error);
             return {
                 messages: response.data.messages,
@@ -307,10 +310,7 @@ export class SlackConnector extends BaseConnector implements OnModuleInit {
 
     private async getThreadMessages(channelId: string, threadTs: string): Promise<SlackMessage[]> {
         try {
-            const response = await axios.get('https://slack.com/api/conversations.replies', {
-                headers: { 'Authorization': `Bearer ${this.token}` },
-                params: { channel: channelId, ts: threadTs, limit: 100 },
-            });
+            const response = await this.slackApi('https://slack.com/api/conversations.replies', { channel: channelId, ts: threadTs, limit: 100 });
             if (!response.data.ok) throw new Error(response.data.error);
             return response.data.messages;
         } catch (error) {
@@ -325,10 +325,7 @@ export class SlackConnector extends BaseConnector implements OnModuleInit {
             return this.userCache.get(userId)!;
         }
         try {
-            const response = await axios.get('https://slack.com/api/users.info', {
-                headers: { 'Authorization': `Bearer ${this.token}` },
-                params: { user: userId },
-            });
+            const response = await this.slackApi('https://slack.com/api/users.info', { user: userId });
             if (response.data.ok) {
                 const user = response.data.user as SlackUser;
                 this.userCache.set(userId, user);
@@ -346,5 +343,27 @@ export class SlackConnector extends BaseConnector implements OnModuleInit {
             const match = m.match(/<@([A-Z0-9]+)/);
             return match ? match[1] : '';
         }).filter(Boolean);
+    }
+
+    private async slackApi(url: string, params: Record<string, any>): Promise<any> {
+        const maxRetries = 3;
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                const response = await axios.get(url, {
+                    headers: { 'Authorization': `Bearer ${this.token}` },
+                    params,
+                });
+                return response;
+            } catch (error: any) {
+                if (error.response?.status === 429) {
+                    const retryAfter = parseInt(error.response.headers['retry-after'] || '30', 10);
+                    this.logger.warn(`Slack rate limited, waiting ${retryAfter}s (attempt ${attempt + 1}/${maxRetries})`);
+                    await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+                    continue;
+                }
+                throw error;
+            }
+        }
+        throw new Error('Slack API rate limit exceeded after retries');
     }
 }
