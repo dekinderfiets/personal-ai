@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
+import * as crypto from 'crypto';
+import * as path from 'path';
 import { BaseConnector } from './base.connector';
+import { ChunkingService } from '../indexing/chunking.service';
 import { Cursor, IndexRequest, ConnectorResult, IndexDocument, GitHubDocument, DataSource } from '../types';
 
 interface GitHubRepo {
@@ -75,6 +78,52 @@ interface GitHubComment {
     updated_at: string;
 }
 
+interface GitHubTreeItem {
+    path: string;
+    mode: string;
+    type: 'blob' | 'tree';
+    sha: string;
+    size?: number;
+    url: string;
+}
+
+const SKIP_DIRECTORIES = new Set([
+    'node_modules', 'vendor', 'dist', 'build', '.git', '__pycache__',
+    '.next', 'coverage', '.cache', 'target', 'out', 'bin', 'obj',
+    '.gradle', 'venv', '.venv', '.tox', '.mypy_cache', '.pytest_cache',
+]);
+
+const SKIP_EXTENSIONS = new Set([
+    // Images
+    '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.bmp', '.tiff',
+    // Media
+    '.mp3', '.mp4', '.wav', '.avi', '.mov', '.webm',
+    // Archives
+    '.zip', '.tar', '.gz', '.bz2', '.rar', '.7z',
+    // Binaries
+    '.exe', '.dll', '.so', '.dylib', '.bin',
+    // Fonts
+    '.woff', '.woff2', '.ttf', '.eot', '.otf',
+    // Office docs
+    '.pdf', '.docx', '.xlsx', '.pptx', '.doc', '.xls',
+    // Compiled
+    '.pyc', '.class', '.o', '.obj', '.pdb',
+    // Lock files
+    '.lock',
+    // Source maps
+    '.map',
+]);
+
+const SKIP_FILENAMES = new Set([
+    'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'go.sum',
+    'Cargo.lock', 'Gemfile.lock', 'composer.lock', 'poetry.lock',
+]);
+
+const MAX_FILE_SIZE = 512 * 1024; // 512KB
+const MAX_FILES_PER_REPO = 500;
+const FILE_FETCH_BATCH_SIZE = 5;
+const FILE_FETCH_BATCH_DELAY = 200;
+
 @Injectable()
 export class GitHubConnector extends BaseConnector {
     private readonly logger = new Logger(GitHubConnector.name);
@@ -82,7 +131,10 @@ export class GitHubConnector extends BaseConnector {
     private readonly username: string;
     private api: AxiosInstance;
 
-    constructor(private configService: ConfigService) {
+    constructor(
+        private configService: ConfigService,
+        private chunkingService: ChunkingService,
+    ) {
         super();
         this.token = this.configService.get<string>('github.token') || '';
         this.username = this.configService.get<string>('github.username') || '';
@@ -113,20 +165,22 @@ export class GitHubConnector extends BaseConnector {
 
         // Parse sync state from cursor
         let state: {
-            phase: 'repos' | 'issues' | 'prs';
+            phase: 'repos' | 'issues' | 'files';
             repoIdx: number;
             page: number;
             repos: string[];
+            repoDefaultBranches: Record<string, string>;
+            indexFiles?: boolean;
         };
 
         if (cursor?.syncToken) {
             try {
                 state = JSON.parse(cursor.syncToken);
             } catch {
-                state = { phase: 'repos', repoIdx: 0, page: 1, repos: [] };
+                state = { phase: 'repos', repoIdx: 0, page: 1, repos: [], repoDefaultBranches: {} };
             }
         } else {
-            state = { phase: 'repos', repoIdx: 0, page: 1, repos: [] };
+            state = { phase: 'repos', repoIdx: 0, page: 1, repos: [], repoDefaultBranches: {} };
         }
 
         const since = cursor?.lastSync && !request.fullReindex ? cursor.lastSync : undefined;
@@ -135,6 +189,11 @@ export class GitHubConnector extends BaseConnector {
         if (state.phase === 'repos') {
             const repos = await this.listRepositories(request.repos);
             state.repos = repos.map(r => r.full_name);
+            state.repoDefaultBranches = {};
+            for (const repo of repos) {
+                state.repoDefaultBranches[repo.full_name] = repo.default_branch;
+            }
+            state.indexFiles = !!request.indexFiles;
             state.phase = 'issues';
             state.repoIdx = 0;
             state.page = 1;
@@ -177,14 +236,51 @@ export class GitHubConnector extends BaseConnector {
             if (hasNextPage) {
                 state.page++;
             } else {
-                // Move to next repo
-                state.repoIdx++;
-                state.page = 1;
+                // After issues, enter files phase if enabled; otherwise advance to next repo
+                if (state.indexFiles) {
+                    state.phase = 'files';
+                    state.page = 1;
+                } else {
+                    state.repoIdx++;
+                    state.page = 1;
+                    // Check if we wrapped past all repos
+                    if (state.repoIdx >= state.repos.length) {
+                        state.phase = 'repos';
+                        state.repoIdx = 0;
+                    }
+                }
             }
+
+            const hasMore = state.phase !== 'repos' || state.repoIdx !== 0 || documents.length > 0
+                ? state.repoIdx < state.repos.length || state.phase === 'files'
+                : false;
+
+            return {
+                documents,
+                newCursor: {
+                    source: 'github' as DataSource,
+                    syncToken: hasMore ? JSON.stringify(state) : undefined,
+                },
+                hasMore,
+                batchLastSync: new Date().toISOString(),
+            };
+        }
+
+        // Phase 3: Fetch file contents from repository
+        if (state.phase === 'files') {
+            const branch = state.repoDefaultBranches[repoFullName] || 'main';
+            const fileDocs = await this.fetchRepoFiles(repoFullName, branch);
+            documents.push(...fileDocs);
+
+            this.logger.log(`Indexed ${fileDocs.length} files from ${repoFullName}`);
+
+            // Move to next repo
+            state.repoIdx++;
+            state.phase = 'issues';
+            state.page = 1;
 
             const hasMore = state.repoIdx < state.repos.length;
             if (!hasMore) {
-                // Reset for next incremental run
                 state.phase = 'repos';
                 state.repoIdx = 0;
                 state.page = 1;
@@ -469,5 +565,167 @@ export class GitHubConnector extends BaseConnector {
                 parentId: `github_pr_${repoFullName.replace('/', '_')}_${prNumber}`,
             },
         };
+    }
+
+    // ----------------------------------------------------------------
+    // File indexing
+    // ----------------------------------------------------------------
+
+    private async fetchRepoFiles(repoFullName: string, branch: string): Promise<GitHubDocument[]> {
+        const [owner, repo] = repoFullName.split('/');
+        const documents: GitHubDocument[] = [];
+
+        try {
+            // Get the full file tree in a single API call
+            const response = await this.api.get<{ tree: GitHubTreeItem[]; truncated: boolean }>(
+                `/repos/${repoFullName}/git/trees/${branch}`,
+                { params: { recursive: 1 } },
+            );
+
+            const tree = response.data.tree;
+            if (response.data.truncated) {
+                this.logger.warn(`File tree for ${repoFullName} was truncated by GitHub API`);
+            }
+
+            // Filter to indexable files
+            const candidateFiles = tree
+                .filter(item => item.type === 'blob')
+                .filter(item => this.isIndexableFile(item))
+                .slice(0, MAX_FILES_PER_REPO);
+
+            this.logger.log(`Found ${candidateFiles.length} indexable files (from ${tree.length} total) in ${repoFullName}`);
+
+            // Fetch file contents in batches
+            for (let i = 0; i < candidateFiles.length; i += FILE_FETCH_BATCH_SIZE) {
+                const batch = candidateFiles.slice(i, i + FILE_FETCH_BATCH_SIZE);
+                const batchResults = await Promise.allSettled(
+                    batch.map(item => this.fetchFileContent(repoFullName, item, owner, repo)),
+                );
+
+                for (const result of batchResults) {
+                    if (result.status === 'fulfilled' && result.value) {
+                        documents.push(result.value);
+                    }
+                }
+
+                // Rate limiting delay between batches
+                if (i + FILE_FETCH_BATCH_SIZE < candidateFiles.length) {
+                    await new Promise(resolve => setTimeout(resolve, FILE_FETCH_BATCH_DELAY));
+                }
+            }
+        } catch (error) {
+            this.logger.error(`Failed to fetch file tree for ${repoFullName}: ${(error as Error).message}`);
+        }
+
+        return documents;
+    }
+
+    private isIndexableFile(item: GitHubTreeItem): boolean {
+        // Size check
+        if (item.size && item.size > MAX_FILE_SIZE) return false;
+
+        const filePath = item.path;
+        const ext = path.extname(filePath).toLowerCase();
+        const basename = path.basename(filePath);
+
+        // Skip known binary/non-text extensions
+        if (SKIP_EXTENSIONS.has(ext)) return false;
+
+        // Skip minified files
+        if (basename.endsWith('.min.js') || basename.endsWith('.min.css')) return false;
+
+        // Skip known lock/generated filenames
+        if (SKIP_FILENAMES.has(basename)) return false;
+
+        // Skip files in excluded directories
+        const parts = filePath.split('/');
+        for (const part of parts) {
+            if (SKIP_DIRECTORIES.has(part)) return false;
+        }
+
+        return true;
+    }
+
+    private async fetchFileContent(
+        repoFullName: string,
+        item: GitHubTreeItem,
+        owner: string,
+        repo: string,
+    ): Promise<GitHubDocument | null> {
+        try {
+            const response = await this.api.get<string>(
+                `/repos/${repoFullName}/contents/${item.path}`,
+                {
+                    headers: { Accept: 'application/vnd.github.raw+json' },
+                    responseType: 'text',
+                    params: { ref: item.sha },
+                },
+            );
+
+            const content = response.data;
+
+            // Null-byte check for binary files that slipped through extension filtering
+            if (typeof content !== 'string' || content.includes('\0')) {
+                return null;
+            }
+
+            const ext = path.extname(item.path).toLowerCase();
+            const language = this.chunkingService.getLanguage(item.path);
+            const sha7 = item.sha.substring(0, 7);
+            const pathHash = crypto.createHash('md5').update(item.path).digest('hex').substring(0, 12);
+            const docId = `github_file_${owner}_${repo}_${sha7}_${pathHash}`;
+            const now = new Date().toISOString();
+
+            // Build file header for context
+            const fileHeader = [
+                `# ${item.path}`,
+                `Repository: ${repoFullName}`,
+                language ? `Language: ${language}` : '',
+                '',
+            ].filter(Boolean).join('\n');
+
+            const fullContent = fileHeader + content;
+
+            // Chunk the content
+            let chunks: string[];
+            if (this.chunkingService.isCodeFile(item.path)) {
+                chunks = await this.chunkingService.chunkCode(fullContent, item.path);
+            } else {
+                chunks = await this.chunkingService.chunkText(fullContent);
+            }
+
+            const doc: GitHubDocument = {
+                id: docId,
+                source: 'github',
+                content: fullContent,
+                metadata: {
+                    id: docId,
+                    source: 'github',
+                    type: 'file',
+                    title: item.path,
+                    repo: repoFullName,
+                    author: owner,
+                    createdAt: now,
+                    updatedAt: now,
+                    url: `https://github.com/${repoFullName}/blob/${sha7}/${item.path}`,
+                    parentId: `github_repo_${repoFullName.replace('/', '_')}`,
+                    filePath: item.path,
+                    fileExtension: ext,
+                    fileLanguage: language || undefined,
+                    fileSha: item.sha,
+                    fileSize: item.size,
+                },
+            };
+
+            // Set preChunked if content was split into multiple chunks
+            if (chunks.length > 1) {
+                doc.preChunked = { chunks };
+            }
+
+            return doc;
+        } catch (error) {
+            this.logger.warn(`Failed to fetch file ${item.path} from ${repoFullName}: ${(error as Error).message}`);
+            return null;
+        }
     }
 }

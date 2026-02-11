@@ -144,7 +144,8 @@ const Settings: React.FC = () => {
     try {
       const res = await fetch(`${API_BASE_URL}/index/settings/${source}`);
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      const data = await res.json();
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : {};
       mergeServerSettings(source, data || {});
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -280,7 +281,7 @@ const Settings: React.FC = () => {
       case 'calendar':
         return { calendarIds: settings.calendarIds };
       case 'github':
-        return { repos: settings.repos };
+        return { repos: settings.repos, indexFiles: settings.indexFiles };
       case 'gmail':
         return {
           gmailSettings: {
@@ -789,30 +790,130 @@ const Settings: React.FC = () => {
     </Box>
   );
 
-  const renderGitHubSettings = () => (
-    <Box>
-      <Typography variant="subtitle2" sx={{ mb: 1.5 }}>Repositories</Typography>
-      <Autocomplete
-        multiple
-        freeSolo
-        options={githubRepos.map((r: any) => r.full_name || r.name || r)}
-        value={currentSettings?.repos || []}
-        onChange={(_, newValue) => handleSettingChange('repos', newValue)}
-        renderTags={(value: readonly string[], getTagProps) =>
-          value.map((option: string, index: number) => (
-            <Chip variant="outlined" label={option} {...getTagProps({ index })} key={index} size="small" />
-          ))
-        }
-        renderInput={(params) => (
-          <TextField
-            {...params}
-            placeholder="owner/repo"
-            helperText={loadingDiscovery ? 'Loading repos...' : 'Select repos to index (empty = all user repos)'}
+  const renderGitHubSettings = () => {
+    const repoOptions = githubRepos.map((r: any) => ({
+      full_name: r.full_name || r.name || r,
+      owner: r.owner?.login || (r.full_name || '').split('/')[0] || '',
+      name: r.name || '',
+      description: r.description || '',
+      language: r.language || '',
+      isPrivate: r.private || false,
+      stargazers_count: r.stargazers_count || 0,
+    }));
+    const owners = [...new Set(repoOptions.map((r: any) => r.owner))];
+    const totalRepos = repoOptions.length;
+    const selectedCount = (currentSettings?.repos || []).length;
+
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <Box>
+        <Typography variant="subtitle2" sx={{ mb: 1.5 }}>Repositories</Typography>
+        <Autocomplete
+          multiple
+          disableCloseOnSelect
+          filterSelectedOptions
+          limitTags={8}
+          options={repoOptions}
+          groupBy={(option: any) => option.owner}
+          getOptionLabel={(option: any) => typeof option === 'string' ? option : option.full_name}
+          filterOptions={(options, { inputValue }) => {
+            const q = inputValue.toLowerCase();
+            if (!q) return options;
+            return options.filter((o: any) =>
+              o.full_name.toLowerCase().includes(q) ||
+              o.description.toLowerCase().includes(q) ||
+              (o.language && o.language.toLowerCase().includes(q))
+            );
+          }}
+          value={(currentSettings?.repos || []).map((name: string) => {
+            const found = repoOptions.find((r: any) => r.full_name === name);
+            return found || { full_name: name, owner: name.split('/')[0] || '', name: name.split('/')[1] || name, description: '', language: '', isPrivate: false, stargazers_count: 0 };
+          })}
+          onChange={(_, newValue: any[]) => {
+            const names = newValue.map((v: any) => typeof v === 'string' ? v : v.full_name);
+            handleSettingChange('repos', names);
+          }}
+          isOptionEqualToValue={(option: any, value: any) => {
+            const optName = typeof option === 'string' ? option : option.full_name;
+            const valName = typeof value === 'string' ? value : value.full_name;
+            return optName === valName;
+          }}
+          renderOption={(props, option: any, { selected }) => (
+            <li {...props} key={option.full_name}>
+              <Checkbox size="small" checked={selected} sx={{ p: 0, mr: 1 }} />
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Typography variant="body2" noWrap>{option.name}</Typography>
+                  {option.isPrivate && (
+                    <Chip label="private" size="small" sx={{ height: 16, fontSize: '0.65rem', ml: 0.5 }} />
+                  )}
+                  {option.language && (
+                    <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto', flexShrink: 0 }}>
+                      {option.language}
+                    </Typography>
+                  )}
+                </Box>
+                {option.description && (
+                  <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
+                    {option.description}
+                  </Typography>
+                )}
+              </Box>
+            </li>
+          )}
+          renderTags={(value: any[], getTagProps) =>
+            value.map((option: any, index: number) => {
+              const label = typeof option === 'string' ? option : option.full_name;
+              return (
+                <Chip
+                  variant="outlined"
+                  label={label}
+                  {...getTagProps({ index })}
+                  key={label}
+                  size="small"
+                />
+              );
+            })
+          }
+          slotProps={{
+            listbox: { style: { maxHeight: 320 } },
+          }}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              placeholder="Search repositories..."
+              helperText={
+                loadingDiscovery
+                  ? 'Loading repos...'
+                  : totalRepos > 0
+                    ? `${totalRepos} repos across ${owners.length} owner${owners.length !== 1 ? 's' : ''}${selectedCount > 0 ? ` \u00b7 ${selectedCount} selected` : ''} (empty = all user repos)`
+                    : 'Select repos to index (empty = all user repos)'
+              }
+            />
+          )}
+        />
+        </Box>
+
+        {/* Index file contents toggle */}
+        <Box>
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={currentSettings?.indexFiles || false}
+                onChange={(e) => handleSettingChange('indexFiles', e.target.checked)}
+              />
+            }
+            label={<Typography variant="body2">Index file contents</Typography>}
+            sx={{ ml: 0 }}
           />
-        )}
-      />
-    </Box>
-  );
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', ml: 4.25 }}>
+            Embed code and documentation files from selected repositories
+          </Typography>
+        </Box>
+      </Box>
+    );
+  };
 
   /* --- source-specific settings dispatcher --- */
   const renderSettingsForSource = () => {

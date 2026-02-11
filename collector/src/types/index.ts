@@ -102,6 +102,7 @@ export interface DriveDocument extends BaseDocument {
         name: string;
         mimeType: string;
         path: string;
+        folderPath: string;
         owner: string;
         createdAt: string;
         modifiedAt: string;
@@ -170,10 +171,11 @@ export interface CalendarDocument extends BaseDocument {
 // GitHub Document
 export interface GitHubDocument extends BaseDocument {
     source: 'github';
+    preChunked?: { chunks: string[] };
     metadata: {
         id: string;
         source: 'github';
-        type: 'repository' | 'issue' | 'pull_request' | 'pr_review' | 'pr_comment';
+        type: 'repository' | 'issue' | 'pull_request' | 'pr_review' | 'pr_comment' | 'file';
         title: string;
         repo: string;
         number?: number;
@@ -187,6 +189,12 @@ export interface GitHubDocument extends BaseDocument {
         url: string;
         parentId?: string;
         search_context?: string;
+        // File-specific metadata
+        filePath?: string;
+        fileExtension?: string;
+        fileLanguage?: string;
+        fileSha?: string;
+        fileSize?: number;
         // Relevance weights
         relevance_score?: number;
         is_assigned_to_me?: boolean;
@@ -217,6 +225,7 @@ export interface IndexRequest {
     gmailSettings?: GmailSettings;
     calendarIds?: string[];    // For Calendar
     repos?: string[];          // For GitHub
+    indexFiles?: boolean;      // For GitHub file indexing
 }
 
 export interface IndexStatus {
@@ -264,6 +273,7 @@ export interface CalendarSettings {
 
 export interface GitHubSettings {
     repos: string[];
+    indexFiles?: boolean;
 }
 
 export type SourceSettings = DriveSettings | GmailSettings | SlackSettings | JiraSettings | ConfluenceSettings | CalendarSettings | GitHubSettings;
@@ -312,5 +322,6 @@ export interface NavigationResult {
         hasNext: boolean;
         parentId: string | null;
         contextType: string;
+        totalSiblings?: number;
     };
 }

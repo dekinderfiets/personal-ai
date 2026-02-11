@@ -90,6 +90,7 @@ export class IndexingService {
                 break;
             case 'github':
                 request.repos = request.repos || s.repos;
+                request.indexFiles = request.indexFiles ?? s.indexFiles;
                 break;
         }
     }

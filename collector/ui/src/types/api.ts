@@ -86,6 +86,7 @@ export interface ConnectorSettings {
   spaceKeys?: string[];
   calendarIds?: string[];
   repos?: string[];
+  indexFiles?: boolean;
   startDate?: string;
   endDate?: string;
   sinceLast?: boolean;

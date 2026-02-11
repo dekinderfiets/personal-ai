@@ -129,11 +129,16 @@ export class ChromaService implements OnModuleInit {
 
         for (const doc of documents) {
             const sanitizedContent = this.sanitizeText(doc.content);
-            const chunks = this.chunkContent(sanitizedContent);
+
+            // Check for pre-chunked documents (e.g. from GitHub file indexing)
+            const preChunked = (doc as any).preChunked as { chunks: string[] } | undefined;
+            const chunks = preChunked && preChunked.chunks.length > 1
+                ? preChunked.chunks.map(c => this.sanitizeText(c))
+                : this.chunkContent(sanitizedContent);
 
             if (chunks.length === 1) {
                 ids.push(doc.id);
-                contents.push(sanitizedContent);
+                contents.push(preChunked ? chunks[0] : sanitizedContent);
                 metadatas.push(this.flattenMetadata(doc.metadata));
             } else {
                 for (let i = 0; i < chunks.length; i++) {
@@ -347,6 +352,36 @@ export class ChromaService implements OnModuleInit {
         }
     }
 
+    /**
+     * Resolve the ChromaDB document ID for the parent of a given document.
+     * Different connectors use different ID schemes, so we need per-source logic
+     * to translate the metadata parentId into the actual stored document ID.
+     */
+    private resolveParentDocumentId(source: DataSource, metadata: Record<string, unknown>): string | null {
+        const rawParentId = (metadata.parentId as string) || (metadata.parentDocId as string) || null;
+        if (!rawParentId) {
+            // Drive: derive parent from path (navigate to sibling files in same folder)
+            if (source === 'drive' && metadata.path) {
+                // path looks like "/folder/subfolder/file.txt" - parent is the folder path
+                const path = metadata.path as string;
+                const lastSlash = path.lastIndexOf('/');
+                if (lastSlash > 0) {
+                    return null; // No single parent doc for drive folders; handled via path-based sibling nav
+                }
+            }
+            return null;
+        }
+
+        // Confluence comments store parentId as raw page numeric ID,
+        // but the page document ID in ChromaDB is "confluence_{pageId}"
+        if (source === 'confluence' && metadata.type === 'comment') {
+            return `confluence_${rawParentId}`;
+        }
+
+        // All other connectors store parentId matching the actual ChromaDB document ID
+        return rawParentId;
+    }
+
     async navigate(
         documentId: string,
         direction: 'prev' | 'next' | 'siblings' | 'parent' | 'children',
@@ -377,7 +412,10 @@ export class ChromaService implements OnModuleInit {
         const metadata = current.metadata;
         let related: SearchResult[] = [];
 
-        if (scope === 'chunk') {
+        // Parent and children are structural navigation - handle them regardless of scope
+        if (direction === 'parent' || direction === 'children') {
+            related = await this.navigateStructural(currentSource, current, metadata, direction, limit);
+        } else if (scope === 'chunk') {
             related = await this.navigateChunks(currentSource, metadata, direction, limit);
         } else if (scope === 'datapoint') {
             related = await this.navigateDatapoint(currentSource, metadata, direction, limit);
@@ -385,7 +423,7 @@ export class ChromaService implements OnModuleInit {
             related = await this.navigateContext(currentSource, metadata, direction, limit);
         }
 
-        const parentId = (metadata.parentId as string) || (metadata.parentDocId as string) || null;
+        const parentId = this.resolveParentDocumentId(currentSource, metadata);
 
         return {
             current,
@@ -395,8 +433,64 @@ export class ChromaService implements OnModuleInit {
                 hasNext: related.length > 0 && (direction === 'next' || direction === 'siblings'),
                 parentId,
                 contextType: this.getContextType(currentSource, metadata),
+                totalSiblings: related.length,
             },
         };
+    }
+
+    /**
+     * Handle parent/children navigation independent of scope.
+     * Parent navigates up the hierarchy, children navigates down.
+     */
+    private async navigateStructural(
+        source: DataSource,
+        current: SearchResult,
+        metadata: Record<string, unknown>,
+        direction: 'parent' | 'children',
+        limit: number,
+    ): Promise<SearchResult[]> {
+        if (direction === 'parent') {
+            const parentDocId = this.resolveParentDocumentId(source, metadata);
+            if (!parentDocId) return [];
+            const parent = await this.getDocument(source, parentDocId);
+            return parent ? [parent] : [];
+        }
+
+        if (direction === 'children') {
+            // Look for documents whose parentId matches this document's logical ID
+            const docId = this.getLogicalId(source, current, metadata);
+            if (!docId) return [];
+
+            const children = await this.getDocumentsByMetadata(source, { parentId: docId } as Where, limit);
+            // Also check for chunk children
+            const chunks = await this.getDocumentsByMetadata(source, { parentDocId: current.id } as Where, limit);
+            return [...children, ...chunks].slice(0, limit);
+        }
+
+        return [];
+    }
+
+    /**
+     * Get the logical ID that child documents use as their parentId.
+     * For most connectors this is the metadata.id, but it varies by source.
+     */
+    private getLogicalId(source: DataSource, current: SearchResult, metadata: Record<string, unknown>): string | null {
+        switch (source) {
+            case 'jira':
+                // Jira issues use issue.key as their ID and as parentId for comments
+                return (metadata.id as string) || current.id;
+            case 'confluence':
+                // Confluence pages use raw page.id as parentId for comments
+                return (metadata.id as string) || null;
+            case 'slack':
+                // Slack thread replies use the full slack_channelId_ts as parentId
+                return current.id;
+            case 'github':
+                // GitHub PR comments/reviews use the full github_pr_repo_number as parentId
+                return current.id;
+            default:
+                return (metadata.id as string) || current.id;
+        }
     }
 
     private async navigateChunks(
@@ -469,20 +563,12 @@ export class ChromaService implements OnModuleInit {
         direction: string,
         limit: number,
     ): Promise<SearchResult[]> {
-        if (direction === 'parent' || direction === 'siblings') {
-            const parentId = (metadata.parentId as string) || (metadata.parentDocId as string);
-            if (parentId) {
-                const parent = await this.getDocument(source, parentId);
-                if (parent) {
-                    if (direction === 'parent') return [parent];
-                    return this.getDocumentsByMetadata(source, { parentId } as Where, limit);
-                }
+        // parent/children are now handled by navigateStructural, but keep siblings logic
+        if (direction === 'siblings') {
+            const rawParentId = (metadata.parentId as string) || (metadata.parentDocId as string);
+            if (rawParentId) {
+                return this.getDocumentsByMetadata(source, { parentId: rawParentId } as Where, limit);
             }
-        }
-
-        if (direction === 'children') {
-            const docId = metadata.id as string;
-            return this.getDocumentsByMetadata(source, { parentId: docId } as Where, limit);
         }
 
         const contextWhere = this.buildContextWhereClause(source, metadata);
@@ -510,7 +596,16 @@ export class ChromaService implements OnModuleInit {
                 if (metadata.project) return { project: metadata.project as string };
                 return null;
             case 'drive':
-                if (metadata.path) return { path: metadata.path as string };
+                // Use folderPath for sibling navigation (files in same folder)
+                if (metadata.folderPath) return { folderPath: metadata.folderPath as string };
+                // Fallback for older indexed docs: extract folder from full path
+                if (metadata.path) {
+                    const path = metadata.path as string;
+                    const lastSlash = path.lastIndexOf('/');
+                    if (lastSlash > 0) {
+                        return { folderPath: path.substring(0, lastSlash) };
+                    }
+                }
                 return null;
             case 'confluence':
                 if (metadata.parentId) return { parentId: metadata.parentId as string };
@@ -542,7 +637,15 @@ export class ChromaService implements OnModuleInit {
                 if (metadata.project) return { project: metadata.project as string };
                 return null;
             case 'drive':
-                if (metadata.path) return { path: metadata.path as string };
+                // Context-level: show files in the same folder
+                if (metadata.folderPath) return { folderPath: metadata.folderPath as string };
+                if (metadata.path) {
+                    const path = metadata.path as string;
+                    const lastSlash = path.lastIndexOf('/');
+                    if (lastSlash > 0) {
+                        return { folderPath: path.substring(0, lastSlash) };
+                    }
+                }
                 return null;
             case 'confluence':
                 if (metadata.space) return { space: metadata.space as string };
