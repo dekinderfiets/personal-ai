@@ -45,6 +45,7 @@ export interface SerializableIndexRequest {
     };
     calendarIds?: string[];
     repos?: string[];
+    indexFiles?: boolean;
 }
 
 export interface LoadSettingsResult {
@@ -73,6 +74,7 @@ export interface SerializableDocument {
     source: DataSource;
     content: string;
     metadata: Record<string, unknown>;
+    preChunked?: { chunks: string[] };
 }
 
 export interface ProcessBatchResult {

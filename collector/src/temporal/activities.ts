@@ -77,6 +77,7 @@ export function createActivities(deps: ActivityDeps) {
                     source: doc.source,
                     content: doc.content,
                     metadata: doc.metadata as Record<string, unknown>,
+                    ...((doc as any).preChunked ? { preChunked: (doc as any).preChunked } : {}),
                 })),
                 newCursor: result.newCursor as Partial<SerializableCursor>,
                 hasMore: result.hasMore,
