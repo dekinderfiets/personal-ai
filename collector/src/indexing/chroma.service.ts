@@ -71,6 +71,7 @@ export class ChromaService implements OnModuleInit {
         const collection = await this.client.getOrCreateCollection({
             name,
             ...(this.embeddingFunction ? { embeddingFunction: this.embeddingFunction } : {}),
+            metadata: { 'hnsw:space': 'cosine' },
         });
         this.collections.set(source, collection);
         return collection;
@@ -196,35 +197,46 @@ export class ChromaService implements OnModuleInit {
             endDate,
         } = options;
 
-        const allResults: SearchResult[] = [];
+        const whereClause = this.buildWhereClause(where, startDate, endDate);
+        const fetchLimit = limit + offset;
 
-        for (const source of sources) {
-            try {
-                const collection = await this.getOrCreateCollection(source);
-                const whereClause = this.buildWhereClause(where, startDate, endDate);
-                const fetchLimit = limit + offset;
-
-                if (searchType === 'vector') {
-                    const results = await this.vectorSearch(collection, source, query, fetchLimit, whereClause);
-                    allResults.push(...results);
-                } else if (searchType === 'keyword') {
-                    const results = await this.keywordSearch(collection, source, query, fetchLimit, whereClause);
-                    allResults.push(...results);
-                } else if (searchType === 'hybrid') {
-                    const results = await this.hybridSearch(collection, source, query, fetchLimit, whereClause);
-                    allResults.push(...results);
-                }
-            } catch (error) {
-                this.logger.warn(`Search failed for source ${source}: ${(error as Error).message}`);
-            }
+        // Pre-compute query embedding once for vector/hybrid searches
+        let queryEmbedding: number[] | undefined;
+        if ((searchType === 'vector' || searchType === 'hybrid') && this.embeddingFunction) {
+            const embeddings = await this.embeddingFunction.generate([query]);
+            queryEmbedding = embeddings[0];
         }
 
-        // Deduplicate chunks: keep only the highest-scoring chunk per parent document
+        // Query all collections in parallel
+        const sourceResults = await Promise.all(
+            sources.map(async (source) => {
+                try {
+                    const collection = await this.getOrCreateCollection(source);
+
+                    if (searchType === 'vector') {
+                        return this.vectorSearch(collection, source, query, fetchLimit, whereClause, queryEmbedding);
+                    } else if (searchType === 'keyword') {
+                        return this.keywordSearch(collection, source, query, fetchLimit, whereClause);
+                    } else if (searchType === 'hybrid') {
+                        return this.hybridSearch(collection, source, query, fetchLimit, whereClause, queryEmbedding);
+                    }
+                    return [];
+                } catch (error) {
+                    this.logger.warn(`Search failed for source ${source}: ${(error as Error).message}`);
+                    return [];
+                }
+            }),
+        );
+        const allResults = sourceResults.flat();
+
+        // Deduplicate chunks: keep highest-scoring chunk per parent, track chunk match counts
         const parentBest = new Map<string, SearchResult>();
+        const parentChunkCount = new Map<string, number>();
         const deduped: SearchResult[] = [];
         for (const r of allResults) {
             const parentId = r.metadata.parentDocId as string | undefined;
             if (parentId) {
+                parentChunkCount.set(parentId, (parentChunkCount.get(parentId) || 0) + 1);
                 const existing = parentBest.get(parentId);
                 if (!existing || r.score > existing.score) {
                     parentBest.set(parentId, r);
@@ -233,7 +245,18 @@ export class ChromaService implements OnModuleInit {
                 deduped.push(r);
             }
         }
+
+        // Boost multi-chunk matches: if multiple chunks matched, it's a stronger signal
+        for (const [parentId, result] of parentBest) {
+            const chunkCount = parentChunkCount.get(parentId) || 1;
+            if (chunkCount > 1) {
+                result.score *= 1 + Math.min(Math.log(chunkCount) * 0.05, 0.15);
+            }
+        }
         deduped.push(...parentBest.values());
+
+        // Apply post-retrieval boosts
+        this.applyRelevancyBoosts(deduped, query);
 
         // Sort by score descending
         deduped.sort((a, b) => b.score - a.score);
@@ -250,12 +273,26 @@ export class ChromaService implements OnModuleInit {
         query: string,
         limit: number,
         whereClause?: Where,
+        precomputedEmbedding?: number[],
     ): Promise<SearchResult[]> {
-        const queryArgs: { queryTexts: string[]; nResults: number; where?: Where; include: IncludeField[] } = {
-            queryTexts: [query],
+        const queryArgs: {
+            queryTexts?: string[];
+            queryEmbeddings?: number[][];
+            nResults: number;
+            where?: Where;
+            include: IncludeField[];
+        } = {
             nResults: limit,
             include: ['documents', 'metadatas', 'distances'] as IncludeField[],
         };
+
+        // Use pre-computed embedding to avoid redundant OpenAI API calls per collection
+        if (precomputedEmbedding) {
+            queryArgs.queryEmbeddings = [precomputedEmbedding];
+        } else {
+            queryArgs.queryTexts = [query];
+        }
+
         if (whereClause) queryArgs.where = whereClause;
 
         const results = await collection.query(queryArgs);
@@ -303,12 +340,13 @@ export class ChromaService implements OnModuleInit {
         query: string,
         limit: number,
         whereClause?: Where,
+        precomputedEmbedding?: number[],
     ): Promise<SearchResult[]> {
         // Over-fetch from each method for better recall before RRF fusion
         const fetchLimit = limit * 2;
 
         const [vectorResults, keywordResults] = await Promise.all([
-            this.vectorSearch(collection, source, query, fetchLimit, whereClause),
+            this.vectorSearch(collection, source, query, fetchLimit, whereClause, precomputedEmbedding),
             this.keywordSearch(collection, source, query, fetchLimit, whereClause),
         ]);
 
@@ -352,8 +390,10 @@ export class ChromaService implements OnModuleInit {
         const parsed: SearchResult[] = [];
         if (results.ids[0]) {
             for (let i = 0; i < results.ids[0].length; i++) {
-                const distance = results.distances?.[0]?.[i] ?? 1;
-                const score = 1 / (1 + distance);
+                const distance = results.distances?.[0]?.[i] ?? 2;
+                // Cosine distance range: 0 (identical) to 2 (opposite)
+                // Convert to similarity: 1 - distance gives range [-1, 1], clamp to [0, 1]
+                const score = Math.max(0, 1 - distance);
                 parsed.push({
                     id: results.ids[0][i],
                     source,
@@ -396,6 +436,56 @@ export class ChromaService implements OnModuleInit {
         const lengthFactor = 1 / (1 + Math.log(docLength / 2000));
 
         return coverage * 0.6 + normalizedTF * 0.3 + lengthFactor * 0.1;
+    }
+
+    /**
+     * Apply post-retrieval relevancy boosts:
+     * - relevance_score from connector-specific scoring
+     * - title match boost
+     * - recency boost
+     */
+    private applyRelevancyBoosts(results: SearchResult[], query: string): void {
+        const queryLower = query.toLowerCase();
+        const queryTerms = queryLower.split(/\s+/).filter(t => t.length > 1);
+
+        for (const result of results) {
+            let boost = 1.0;
+
+            // 1. Blend with connector relevance_score (stored at indexing time)
+            // Range: 0.3-0.85 typically. Scale to boost multiplier 0.85-1.15
+            const relevanceScore = result.metadata.relevance_score as number | undefined;
+            if (relevanceScore !== undefined && relevanceScore > 0) {
+                const relevanceBoost = 0.85 + relevanceScore * 0.35;
+                result.score *= relevanceBoost;
+            }
+
+            // 2. Title match boost
+            const title = ((result.metadata.title as string) || (result.metadata.subject as string) || '').toLowerCase();
+            if (title) {
+                if (title.includes(queryLower)) {
+                    // Exact query appears in title
+                    boost *= 1.3;
+                } else if (queryTerms.length > 0) {
+                    const titleMatchRatio = queryTerms.filter(t => title.includes(t)).length / queryTerms.length;
+                    if (titleMatchRatio > 0) {
+                        boost *= 1 + titleMatchRatio * 0.2;
+                    }
+                }
+            }
+
+            // 3. Recency boost using connector-specific half-life decay
+            // Different sources have different time-sensitivity (Slack decays fast, docs slow)
+            const dateStr = (result.metadata.updatedAt || result.metadata.date || result.metadata.modifiedAt || result.metadata.timestamp) as string | undefined;
+            if (dateStr) {
+                const daysSince = Math.max(0, (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
+                const halfLife = this.getRecencyHalfLife(result.source);
+                const recencyScore = Math.pow(0.5, daysSince / halfLife);
+                // Blend: up to 8% boost for very recent, decays with half-life
+                boost *= 1 + recencyScore * 0.08;
+            }
+
+            result.score = Math.min(1, result.score * boost);
+        }
     }
 
     private buildWhereClause(
@@ -809,6 +899,19 @@ export class ChromaService implements OnModuleInit {
                 return null;
             default:
                 return null;
+        }
+    }
+
+    private getRecencyHalfLife(source: DataSource): number {
+        switch (source) {
+            case 'slack': return 7;        // Slack messages decay fast
+            case 'calendar': return 14;    // Events moderately time-sensitive
+            case 'gmail': return 14;       // Emails moderately time-sensitive
+            case 'jira': return 30;        // Tickets stay relevant longer
+            case 'github': return 60;      // Code changes decay slowly
+            case 'confluence': return 90;  // Docs stay relevant a long time
+            case 'drive': return 90;       // Documents stay relevant a long time
+            default: return 30;
         }
     }
 
