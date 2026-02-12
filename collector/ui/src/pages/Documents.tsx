@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Typography, Box, Paper, TextField, Button, Select, MenuItem, FormControl, InputLabel,
   CircularProgress, Alert, Chip, Slider, Collapse, ToggleButtonGroup, ToggleButton,
   LinearProgress, IconButton, Tooltip, Pagination, InputAdornment, Divider,
+  Checkbox, Dialog, DialogTitle, DialogContent, DialogActions,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import SearchIcon from '@mui/icons-material/Search';
@@ -16,15 +17,26 @@ import SortIcon from '@mui/icons-material/Sort';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import { useNavigate } from 'react-router-dom';
 import {
-  DataSource, SearchResult, ALL_SOURCES, SOURCE_COLORS, SOURCE_LABELS,
+  DataSource, SearchResult, ALL_SOURCES, SOURCE_COLORS, SOURCE_LABELS, DocumentStats,
 } from '../types/api';
 
 const API_BASE_URL = '/api/v1';
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
 type SearchType = 'vector' | 'keyword' | 'hybrid';
 type SortMode = 'relevance' | 'date' | 'source';
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
 
 const SEARCH_TYPE_LABELS: Record<SearchType, string> = {
   vector: 'Semantic',
@@ -37,7 +49,41 @@ const HIDDEN_METADATA_KEYS = new Set([
   'timestamp', 'source', 'content', 'title', 'subject', 'name', 'url',
 ]);
 
-const Search: React.FC = () => {
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const getScorePercent = (result: SearchResult): number => {
+  if (result.score != null) return Math.round(result.score * 100);
+  if (result.distance != null) return Math.round((1 - result.distance) * 100);
+  return 0;
+};
+
+const getTitle = (result: SearchResult): string => {
+  const m = result.metadata;
+  return (m.title as string) || (m.subject as string) || (m.name as string) || result.id;
+};
+
+const getResultDate = (result: SearchResult): string | null => {
+  const raw = (result.metadata.updatedAt || result.metadata.date || result.metadata.timestamp) as string | undefined;
+  if (!raw) return null;
+  try {
+    return new Date(raw).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  } catch {
+    return raw;
+  }
+};
+
+const highlightSnippet = (content: string): string => {
+  const text = content.replace(/^---[\s\S]*?---\s*/, '').trim();
+  return text.length > 400 ? text.slice(0, 400) + '...' : text;
+};
+
+// ---------------------------------------------------------------------------
+// Main Component
+// ---------------------------------------------------------------------------
+
+const Documents: React.FC = () => {
   const navigate = useNavigate();
 
   // Search controls
@@ -47,7 +93,7 @@ const Search: React.FC = () => {
   const [limit, setLimit] = useState(20);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [sortMode, setSortMode] = useState<SortMode>('relevance');
+  const [sortMode, setSortMode] = useState<SortMode>('date');
 
   // Advanced filters
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -62,11 +108,69 @@ const Search: React.FC = () => {
   const [hasSearched, setHasSearched] = useState(false);
   const [page, setPage] = useState(1);
 
-  const handleSearch = async (newPage = 1) => {
+  // Browse / search mode
+  const [browseMode, setBrowseMode] = useState(true);
+
+  // Document management state
+  const [selectedIds, setSelectedIds] = useState<Map<string, { source: DataSource; id: string }>>(new Map());
+  const [stats, setStats] = useState<DocumentStats | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<'selected' | { source: DataSource; id: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // ---------------------------------------------------------------------------
+  // API calls
+  // ---------------------------------------------------------------------------
+
+  const loadStats = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/search/documents/stats`);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const data = await response.json();
+      setStats(data);
+    } catch {
+      // Stats are non-critical; silently ignore
+    }
+  }, []);
+
+  const browseDocuments = useCallback(async (newPage = 1) => {
+    setLoading(true);
+    setError(null);
+    setPage(newPage);
+
+    const params = new URLSearchParams();
+    if (selectedSources.length > 0) params.set('sources', selectedSources.join(','));
+    params.set('limit', String(limit));
+    params.set('offset', String((newPage - 1) * limit));
+    if (startDate) params.set('startDate', startDate);
+    if (endDate) params.set('endDate', endDate);
+
+    const where: Record<string, unknown> = {};
+    if (metaAuthor) where.author = metaAuthor;
+    if (metaType) where.type = metaType;
+    if (Object.keys(where).length > 0) params.set('where', JSON.stringify(where));
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/search/documents?${params}`);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const data = await response.json();
+      setResults(data.results || data);
+      setTotal(data.total ?? (data.results || data).length);
+      setHasSearched(true);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(`Failed to load documents: ${msg}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedSources, limit, startDate, endDate, metaAuthor, metaType]);
+
+  const handleSearch = useCallback(async (newPage = 1) => {
     setLoading(true);
     setError(null);
     setHasSearched(true);
     setPage(newPage);
+    setBrowseMode(false);
 
     const where: Record<string, unknown> = {};
     if (metaAuthor) where.author = metaAuthor;
@@ -99,7 +203,69 @@ const Search: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  }, [query, selectedSources, searchType, limit, metaAuthor, metaType, startDate, endDate]);
+
+  const handleDeleteSingle = async (source: DataSource, id: string) => {
+    setDeleting(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/index/${source}/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(`Delete failed: ${msg}`);
+    } finally {
+      setDeleting(false);
+      setDeleteDialogOpen(false);
+      setDeleteTarget(null);
+      // Refresh
+      refreshResults();
+      loadStats();
+    }
   };
+
+  const handleBulkDelete = async () => {
+    setDeleting(true);
+    const ids = Array.from(selectedIds.values());
+    try {
+      const response = await fetch(`${API_BASE_URL}/search/documents/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(`Bulk delete failed: ${msg}`);
+    } finally {
+      setDeleting(false);
+      setDeleteDialogOpen(false);
+      setDeleteTarget(null);
+      setSelectedIds(new Map());
+      // Refresh
+      refreshResults();
+      loadStats();
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Handlers
+  // ---------------------------------------------------------------------------
+
+  const refreshResults = useCallback(() => {
+    if (browseMode) {
+      browseDocuments(page);
+    } else if (query) {
+      handleSearch(page);
+    }
+  }, [browseMode, browseDocuments, handleSearch, page, query]);
+
+  // On mount: load stats + browse
+  useEffect(() => {
+    loadStats();
+    browseDocuments(1);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleClear = () => {
     setQuery('');
@@ -110,16 +276,29 @@ const Search: React.FC = () => {
     setEndDate('');
     setMetaAuthor('');
     setMetaType('');
-    setSortMode('relevance');
+    setSortMode('date');
     setResults([]);
     setTotal(0);
     setError(null);
     setHasSearched(false);
     setPage(1);
+    setBrowseMode(true);
+    setSelectedIds(new Map());
+    // Re-browse after clearing
+    setTimeout(() => {
+      browseDocuments(1);
+    }, 0);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && query) handleSearch();
+  };
+
+  const handleSearchClick = () => {
+    if (query) {
+      setSortMode((prev) => prev === 'date' && !browseMode ? prev : 'relevance');
+      handleSearch(1);
+    }
   };
 
   const toggleSource = (source: DataSource) => {
@@ -128,32 +307,78 @@ const Search: React.FC = () => {
     );
   };
 
-  const getScorePercent = (result: SearchResult): number => {
-    if (result.score != null) return Math.round(result.score * 100);
-    if (result.distance != null) return Math.round((1 - result.distance) * 100);
-    return 0;
-  };
-
-  const getTitle = (result: SearchResult): string => {
-    const m = result.metadata;
-    return (m.title as string) || (m.subject as string) || (m.name as string) || result.id;
-  };
-
-  const getResultDate = (result: SearchResult): string | null => {
-    const raw = (result.metadata.updatedAt || result.metadata.date || result.metadata.timestamp) as string | undefined;
-    if (!raw) return null;
-    try {
-      return new Date(raw).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-    } catch {
-      return raw;
+  const handleQueryChange = (value: string) => {
+    setQuery(value);
+    if (!value && !browseMode) {
+      setBrowseMode(true);
+      setSortMode('date');
+      setSelectedIds(new Map());
+      browseDocuments(1);
     }
   };
 
-  const highlightSnippet = (content: string): string => {
-    const text = content.replace(/^---[\s\S]*?---\s*/, '').trim();
-    return text.length > 400 ? text.slice(0, 400) + '...' : text;
+  const handleQueryClear = () => {
+    setQuery('');
+    setBrowseMode(true);
+    setSortMode('date');
+    setSelectedIds(new Map());
+    browseDocuments(1);
   };
 
+  // Pagination handler: delegates to browse or search
+  const handlePageChange = (newPage: number) => {
+    setSelectedIds(new Map());
+    if (browseMode) {
+      browseDocuments(newPage);
+    } else {
+      handleSearch(newPage);
+    }
+  };
+
+  // Selection helpers
+  const toggleSelect = (result: SearchResult) => {
+    setSelectedIds(prev => {
+      const next = new Map(prev);
+      if (next.has(result.id)) {
+        next.delete(result.id);
+      } else {
+        next.set(result.id, { source: result.source, id: result.id });
+      }
+      return next;
+    });
+  };
+
+  const selectAllOnPage = () => {
+    setSelectedIds(prev => {
+      const next = new Map(prev);
+      for (const r of sortedResults) {
+        next.set(r.id, { source: r.source, id: r.id });
+      }
+      return next;
+    });
+  };
+
+  const deselectAll = () => {
+    setSelectedIds(new Map());
+  };
+
+  const openDeleteDialog = (target: 'selected' | { source: DataSource; id: string }) => {
+    setDeleteTarget(target);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (!deleteTarget) return;
+    if (deleteTarget === 'selected') {
+      handleBulkDelete();
+    } else {
+      handleDeleteSingle(deleteTarget.source, deleteTarget.id);
+    }
+  };
+
+  const deleteCount = deleteTarget === 'selected' ? selectedIds.size : 1;
+
+  // Sorting
   const sortedResults = [...results].sort((a, b) => {
     if (sortMode === 'date') {
       const dateA = (a.metadata.updatedAt || a.metadata.date || a.metadata.timestamp || '') as string;
@@ -171,9 +396,48 @@ const Search: React.FC = () => {
   return (
     <Box>
       {/* Page Header */}
-      <Typography variant="h5" fontWeight={600} sx={{ mb: 3 }}>
-        Search
-      </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Box>
+          <Typography variant="h5" fontWeight={600}>
+            Documents
+          </Typography>
+          {stats && (
+            <Typography variant="body2" color="text.secondary">
+              {stats.total.toLocaleString()} documents indexed
+            </Typography>
+          )}
+        </Box>
+        <Tooltip title="Refresh">
+          <IconButton
+            size="small"
+            onClick={() => { loadStats(); if (browseMode) browseDocuments(page); }}
+            sx={{ color: 'text.secondary' }}
+          >
+            <RefreshIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      </Box>
+
+      {/* Stats Bar */}
+      {stats && stats.sources.length > 0 && (
+        <Paper sx={{ p: 2, mb: 2 }}>
+          <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
+            {stats.sources.map(({ source, count }) => (
+              <Chip
+                key={source}
+                label={`${SOURCE_LABELS[source]}: ${count.toLocaleString()}`}
+                size="small"
+                sx={{
+                  backgroundColor: (theme) => alpha(SOURCE_COLORS[source], theme.palette.mode === 'dark' ? 0.2 : 0.1),
+                  color: SOURCE_COLORS[source],
+                  fontWeight: 600,
+                  fontSize: '0.75rem',
+                }}
+              />
+            ))}
+          </Box>
+        </Paper>
+      )}
 
       {/* Search Bar */}
       <Paper sx={{ p: 3, mb: 2 }}>
@@ -181,7 +445,7 @@ const Search: React.FC = () => {
           <TextField
             fullWidth
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => handleQueryChange(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Search across all your indexed data..."
             size="medium"
@@ -194,7 +458,7 @@ const Search: React.FC = () => {
                 ),
                 endAdornment: query ? (
                   <InputAdornment position="end">
-                    <IconButton size="small" onClick={() => setQuery('')} edge="end">
+                    <IconButton size="small" onClick={handleQueryClear} edge="end">
                       <ClearIcon fontSize="small" />
                     </IconButton>
                   </InputAdornment>
@@ -219,7 +483,7 @@ const Search: React.FC = () => {
           />
           <Button
             variant="contained"
-            onClick={() => handleSearch(1)}
+            onClick={handleSearchClick}
             disabled={loading || !query}
             sx={{
               px: 4,
@@ -436,21 +700,55 @@ const Search: React.FC = () => {
         </Collapse>
       </Paper>
 
+      {/* Selection Action Bar */}
+      {selectedIds.size > 0 && (
+        <Paper sx={(theme) => ({
+          p: 2, mb: 2,
+          backgroundColor: alpha(theme.palette.primary.main, 0.06),
+          border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
+        })}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+            <Typography variant="body2" fontWeight={600}>
+              {selectedIds.size} selected
+            </Typography>
+            <Button size="small" onClick={selectAllOnPage} sx={{ textTransform: 'none' }}>
+              Select all on page
+            </Button>
+            <Button size="small" onClick={deselectAll} sx={{ textTransform: 'none' }}>
+              Deselect all
+            </Button>
+            <Box sx={{ flex: 1 }} />
+            <Button
+              size="small"
+              variant="outlined"
+              color="error"
+              startIcon={<DeleteOutlineIcon />}
+              onClick={() => openDeleteDialog('selected')}
+              disabled={deleting}
+            >
+              Delete selected
+            </Button>
+          </Box>
+        </Paper>
+      )}
+
       {/* Loading Bar */}
       {loading && <LinearProgress sx={{ mb: 2, borderRadius: 1 }} />}
 
       {/* Error */}
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
 
       {/* Empty State */}
       {hasSearched && !loading && results.length === 0 && !error && (
         <Paper sx={{ p: 6, textAlign: 'center' }}>
           <SearchIcon sx={{ fontSize: 48, color: 'text.secondary', opacity: 0.4, mb: 2 }} />
           <Typography variant="h6" color="text.secondary" gutterBottom>
-            No results found
+            {browseMode ? 'No documents found' : 'No results found'}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Try adjusting your search query or filters.
+            {browseMode
+              ? 'No documents have been indexed yet. Start indexing from the Dashboard.'
+              : 'Try adjusting your search query or filters.'}
           </Typography>
         </Paper>
       )}
@@ -461,7 +759,7 @@ const Search: React.FC = () => {
           {/* Results Header */}
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
             <Typography variant="body2" color="text.secondary" fontWeight={500}>
-              {total} result{total !== 1 ? 's' : ''} found
+              {total} {browseMode ? 'document' : 'result'}{total !== 1 ? 's' : ''} {browseMode ? 'total' : 'found'}
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <SortIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
@@ -471,9 +769,11 @@ const Search: React.FC = () => {
                 onChange={(_, val) => val && setSortMode(val)}
                 size="small"
               >
-                <ToggleButton value="relevance" sx={{ px: 1.5, py: 0.25, fontSize: '0.75rem' }}>
-                  Relevance
-                </ToggleButton>
+                {!browseMode && (
+                  <ToggleButton value="relevance" sx={{ px: 1.5, py: 0.25, fontSize: '0.75rem' }}>
+                    Relevance
+                  </ToggleButton>
+                )}
                 <ToggleButton value="date" sx={{ px: 1.5, py: 0.25, fontSize: '0.75rem' }}>
                   Date
                 </ToggleButton>
@@ -490,6 +790,7 @@ const Search: React.FC = () => {
               const scorePercent = getScorePercent(result);
               const dateStr = getResultDate(result);
               const sourceColor = SOURCE_COLORS[result.source] || '#666';
+              const isSelected = selectedIds.has(result.id);
 
               return (
                 <Paper
@@ -498,6 +799,7 @@ const Search: React.FC = () => {
                     p: 0,
                     overflow: 'hidden',
                     transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+                    borderColor: isSelected ? (theme) => alpha(theme.palette.primary.main, 0.4) : undefined,
                     '&:hover': {
                       borderColor: (theme) => alpha(theme.palette.primary.main, 0.3),
                       boxShadow: (theme) => `0 2px 8px ${alpha(theme.palette.primary.main, 0.08)}`,
@@ -517,8 +819,14 @@ const Search: React.FC = () => {
 
                     {/* Content */}
                     <Box sx={{ flex: 1, p: 2.5 }}>
-                      {/* Top Row: Source Chip + Title + Actions */}
-                      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, mb: 1 }}>
+                      {/* Top Row: Checkbox + Source Chip + Title + Actions */}
+                      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
+                        <Checkbox
+                          checked={isSelected}
+                          onChange={() => toggleSelect(result)}
+                          size="small"
+                          sx={{ p: 0, mt: 0.2, mr: 0.5 }}
+                        />
                         <Chip
                           label={SOURCE_LABELS[result.source] || result.source}
                           size="small"
@@ -581,34 +889,48 @@ const Search: React.FC = () => {
                               <ExploreIcon sx={{ fontSize: 18 }} />
                             </IconButton>
                           </Tooltip>
+                          <Tooltip title="Delete document">
+                            <IconButton
+                              size="small"
+                              onClick={() => openDeleteDialog({ source: result.source, id: result.id })}
+                              sx={{
+                                color: 'text.secondary',
+                                '&:hover': { color: 'error.main' },
+                              }}
+                            >
+                              <DeleteOutlineIcon sx={{ fontSize: 18 }} />
+                            </IconButton>
+                          </Tooltip>
                         </Box>
                       </Box>
 
                       {/* Score + Date Row */}
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 140 }}>
-                          <LinearProgress
-                            variant="determinate"
-                            value={scorePercent}
-                            sx={{
-                              width: 80,
-                              height: 4,
-                              borderRadius: 2,
-                              backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.08),
-                              '& .MuiLinearProgress-bar': {
+                        {!browseMode && (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 140 }}>
+                            <LinearProgress
+                              variant="determinate"
+                              value={scorePercent}
+                              sx={{
+                                width: 80,
+                                height: 4,
                                 borderRadius: 2,
-                                backgroundColor: scorePercent > 70
-                                  ? 'success.main'
-                                  : scorePercent > 40
-                                    ? 'warning.main'
-                                    : 'text.secondary',
-                              },
-                            }}
-                          />
-                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-                            {scorePercent}%
-                          </Typography>
-                        </Box>
+                                backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.08),
+                                '& .MuiLinearProgress-bar': {
+                                  borderRadius: 2,
+                                  backgroundColor: scorePercent > 70
+                                    ? 'success.main'
+                                    : scorePercent > 40
+                                      ? 'warning.main'
+                                      : 'text.secondary',
+                                },
+                              }}
+                            />
+                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+                              {scorePercent}%
+                            </Typography>
+                          </Box>
+                        )}
                         {dateStr && (
                           <Typography variant="caption" color="text.secondary">
                             {dateStr}
@@ -668,7 +990,7 @@ const Search: React.FC = () => {
               <Pagination
                 count={totalPages}
                 page={page}
-                onChange={(_, newPage) => handleSearch(newPage)}
+                onChange={(_, newPage) => handlePageChange(newPage)}
                 color="primary"
                 shape="rounded"
                 showFirstButton
@@ -678,8 +1000,43 @@ const Search: React.FC = () => {
           )}
         </Box>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => { if (!deleting) { setDeleteDialogOpen(false); setDeleteTarget(null); } }}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <WarningAmberIcon color="error" />
+          Delete {deleteCount} document{deleteCount !== 1 ? 's' : ''}?
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            This action cannot be undone. The selected document{deleteCount !== 1 ? 's' : ''} will be permanently removed from the index.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => { setDeleteDialogOpen(false); setDeleteTarget(null); }}
+            disabled={deleting}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={confirmDelete}
+            disabled={deleting}
+            startIcon={deleting ? <CircularProgress size={16} color="inherit" /> : <DeleteOutlineIcon />}
+          >
+            {deleting ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
 
-export default Search;
+export default Documents;

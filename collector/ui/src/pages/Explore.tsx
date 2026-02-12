@@ -262,14 +262,14 @@ const Explore: React.FC = () => {
             No Document Selected
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3, maxWidth: 420, textAlign: 'center' }}>
-            Select a document from Search results to start exploring. Click the explore button on any search result to navigate through related data.
+            Select a document from Documents to start exploring. Click the explore button on any result to navigate through related data.
           </Typography>
           <Button
             variant="outlined"
             startIcon={<SearchIcon />}
-            onClick={() => navigate('/search')}
+            onClick={() => navigate('/documents')}
           >
-            Go to Search
+            Go to Documents
           </Button>
         </Box>
       </Box>
@@ -297,9 +297,9 @@ const Explore: React.FC = () => {
           variant="outlined"
           size="small"
           startIcon={<SearchIcon />}
-          onClick={() => navigate('/search')}
+          onClick={() => navigate('/documents')}
         >
-          Search
+          Documents
         </Button>
       </Box>
 

@@ -103,3 +103,8 @@ export interface WorkflowInfo {
   closeTime?: string;
   executionTime?: number;
 }
+
+export interface DocumentStats {
+  sources: Array<{ source: DataSource; count: number }>;
+  total: number;
+}

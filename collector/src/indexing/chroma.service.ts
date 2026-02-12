@@ -610,6 +610,65 @@ export class ChromaService implements OnModuleInit {
         return { $and: conditions };
     }
 
+    async countDocuments(source: DataSource): Promise<number> {
+        try {
+            const collection = await this.getOrCreateCollection(source);
+            return await collection.count();
+        } catch (error) {
+            this.logger.warn(`Failed to count documents for ${source}: ${(error as Error).message}`);
+            return 0;
+        }
+    }
+
+    async listDocuments(
+        source: DataSource,
+        options: {
+            limit?: number;
+            offset?: number;
+            where?: Record<string, unknown>;
+            startDate?: string;
+            endDate?: string;
+        } = {},
+    ): Promise<{ results: SearchResult[]; total: number }> {
+        const { limit = 20, offset = 0, where, startDate, endDate } = options;
+
+        const collection = await this.getOrCreateCollection(source);
+        const whereClause = this.buildWhereClause(where, startDate, endDate);
+
+        try {
+            // Fetch all matching documents (ChromaDB doesn't support ordering in .get())
+            const getArgs: { where?: Where; include: IncludeField[] } = {
+                include: ['documents', 'metadatas'] as IncludeField[],
+            };
+            if (whereClause) getArgs.where = whereClause;
+
+            const result = await collection.get(getArgs);
+
+            const docs: SearchResult[] = result.ids.map((id, i) => ({
+                id,
+                source,
+                content: result.documents?.[i] || '',
+                metadata: (result.metadatas?.[i] as Record<string, unknown>) || {},
+                score: 0,
+            }));
+
+            // Sort by updatedAtTs descending (most recent first)
+            docs.sort((a, b) => {
+                const aTs = (a.metadata.updatedAtTs as number) || (a.metadata.createdAtTs as number) || 0;
+                const bTs = (b.metadata.updatedAtTs as number) || (b.metadata.createdAtTs as number) || 0;
+                return bTs - aTs;
+            });
+
+            return {
+                results: docs.slice(offset, offset + limit),
+                total: docs.length,
+            };
+        } catch (error) {
+            this.logger.warn(`Failed to list documents for ${source}: ${(error as Error).message}`);
+            return { results: [], total: 0 };
+        }
+    }
+
     async deleteDocument(source: DataSource, documentId: string): Promise<void> {
         const collection = await this.getOrCreateCollection(source);
 

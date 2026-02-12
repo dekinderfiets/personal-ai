@@ -4,10 +4,9 @@ import {
   Drawer, List, ListItemButton, ListItemIcon, ListItemText,
   Typography, IconButton, Tooltip, Divider, alpha,
 } from '@mui/material';
-import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
-import SearchOutlinedIcon from '@mui/icons-material/SearchOutlined';
-import ExploreOutlinedIcon from '@mui/icons-material/ExploreOutlined';
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import TimelineOutlinedIcon from '@mui/icons-material/TimelineOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
@@ -16,7 +15,7 @@ import StorageOutlinedIcon from '@mui/icons-material/StorageOutlined';
 
 import Dashboard from './pages/Dashboard';
 import Settings from './pages/Settings';
-import Search from './pages/Search';
+import Documents from './pages/Documents';
 import Explore from './pages/Explore';
 import Activity from './pages/Activity';
 import { createAppTheme } from './theme';
@@ -26,8 +25,7 @@ const SIDEBAR_WIDTH = 220;
 
 const NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: <DashboardOutlinedIcon /> },
-  { path: '/search', label: 'Search', icon: <SearchOutlinedIcon /> },
-  { path: '/explore', label: 'Explore', icon: <ExploreOutlinedIcon /> },
+  { path: '/documents', label: 'Documents', icon: <DescriptionOutlinedIcon /> },
   { path: '/activity', label: 'Activity', icon: <TimelineOutlinedIcon /> },
   { path: '/settings', label: 'Settings', icon: <SettingsOutlinedIcon /> },
 ];
@@ -155,10 +153,11 @@ function App() {
                 <Routes>
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/settings" element={<Settings />} />
-                  <Route path="/search" element={<Search />} />
+                  <Route path="/documents" element={<Documents />} />
                   <Route path="/activity" element={<Activity />} />
                   <Route path="/explore" element={<Explore />} />
                   <Route path="/explore/:documentId" element={<Explore />} />
+                  <Route path="/search" element={<Navigate to="/documents" replace />} />
                 </Routes>
               </Box>
             </Box>

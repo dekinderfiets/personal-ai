@@ -331,3 +331,18 @@ export interface NavigationResult {
         totalSiblings?: number;
     };
 }
+
+// Documents Page Types
+export interface BulkDeleteRequest {
+    ids: Array<{ source: DataSource; id: string }>;
+}
+
+export interface BulkDeleteResponse {
+    deleted: number;
+    errors: Array<{ id: string; error: string }>;
+}
+
+export interface DocumentStats {
+    sources: Array<{ source: DataSource; count: number }>;
+    total: number;
+}
