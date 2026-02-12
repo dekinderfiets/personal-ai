@@ -247,6 +247,28 @@ const Dashboard: React.FC = () => {
     return () => clearInterval(interval);
   }, [fetchStatuses, fetchHealth]);
 
+  // Clear pending indexingStatus flags once the status poll confirms 'running'
+  useEffect(() => {
+    setIndexingStatus((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const key of Object.keys(next)) {
+        if (!next[key]) continue;
+        if (key === 'all') {
+          // Clear 'all' once any source is running
+          if (statuses.some((s) => s.status === 'running')) {
+            next[key] = false;
+            changed = true;
+          }
+        } else if (statuses.find((s) => s.source === key)?.status === 'running') {
+          next[key] = false;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [statuses]);
+
   // ---- Actions ----
 
   const triggerIndexing = async (source: string, extraBody?: Record<string, unknown>) => {
@@ -265,12 +287,10 @@ const Dashboard: React.FC = () => {
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
+      // Keep button disabled — cleared once status poll shows 'running'
     } catch (e: any) {
       setError(`Failed to trigger indexing for ${source}: ${e.message}`);
-    } finally {
-      setTimeout(() => {
-        setIndexingStatus((prev) => ({ ...prev, [source]: false }));
-      }, 1000);
+      setIndexingStatus((prev) => ({ ...prev, [source]: false }));
     }
   };
 

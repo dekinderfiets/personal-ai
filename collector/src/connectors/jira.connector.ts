@@ -15,7 +15,7 @@ interface JiraIssue {
         status: { name: string };
         priority: { name: string } | null;
         assignee: { displayName: string } | null;
-        reporter: { displayName: string };
+        reporter: { displayName: string } | null;
         labels: string[];
         components: { name: string }[];
         project: { key: string };
@@ -85,24 +85,38 @@ export class JiraConnector extends BaseConnector {
 
         const nextPageToken = cursor?.syncToken || undefined;
 
-        // Build JQL query
-        let jql = 'ORDER BY updated ASC';
-        const conditions = [];
+        // Build JQL query — but only when we DON'T have a nextPageToken.
+        // Jira's nextPageToken embeds the original JQL; sending a different
+        // JQL on subsequent pages causes "invalid or expired" token errors.
+        // When paginating we reuse the JQL stored in cursor metadata.
+        let jql: string;
 
-        if (request.projectKeys?.length) {
-            conditions.push(`project IN (${request.projectKeys.join(',')})`);
+        if (nextPageToken && cursor?.metadata?.jql) {
+            jql = cursor.metadata.jql as string;
+        } else {
+            const conditions = [];
+
+            if (request.projectKeys?.length) {
+                conditions.push(`project IN (${request.projectKeys.join(',')})`);
+            }
+
+            // For incremental sync, only fetch issues updated since last sync
+            if (cursor?.lastSync && !request.fullReindex) {
+                const lastSync = new Date(cursor.lastSync).toISOString().replace('T', ' ').slice(0, 16);
+                conditions.push(`updated >= "${lastSync}"`);
+            }
+
+            // The /rest/api/3/search/jql endpoint rejects "unbounded" queries.
+            // If we have no conditions at all (e.g. full reindex without project
+            // filter), add a broad date bound to satisfy the API.
+            if (conditions.length === 0) {
+                conditions.push('updated >= -365d');
+            }
+
+            jql = `${conditions.join(' AND ')} ORDER BY updated ASC`;
         }
 
-        // For incremental sync, only fetch issues updated since last sync
-        if (cursor?.lastSync && !request.fullReindex) {
-            // Jira format: "YYYY-MM-DD HH:mm"
-            const lastSync = new Date(cursor.lastSync).toISOString().replace('T', ' ').slice(0, 16);
-            conditions.push(`updated >= "${lastSync}"`);
-        }
-
-        if (conditions.length > 0) {
-            jql = `${conditions.join(' AND ')} ${jql}`;
-        }
+        this.logger.debug(`Fetching: nextPageToken=${nextPageToken ? 'present' : 'absent'}, jql=${jql}`);
 
         try {
             const body: Record<string, any> = {
@@ -135,7 +149,6 @@ export class JiraConnector extends BaseConnector {
             const documents: IndexDocument[] = [];
 
             for (const issue of response.data.issues) {
-                // Index the issue itself
                 const content = this.buildIssueContent(issue);
                 documents.push({
                     id: issue.key,
@@ -151,7 +164,7 @@ export class JiraConnector extends BaseConnector {
                         status: issue.fields.status.name,
                         priority: issue.fields.priority?.name || 'None',
                         assignee: issue.fields.assignee?.displayName || null,
-                        reporter: issue.fields.reporter.displayName,
+                        reporter: issue.fields.reporter?.displayName || 'Unknown',
                         labels: issue.fields.labels,
                         components: issue.fields.components?.map(c => c.name) || [],
                         sprint: this.getSprintName(issue.fields[this.sprintFieldId]),
@@ -194,7 +207,6 @@ export class JiraConnector extends BaseConnector {
 
             const hasMore = !!response.data.nextPageToken;
 
-            // Get the updatedAt timestamp of the last issue in this batch for the cursor
             const lastIssue = response.data.issues[response.data.issues.length - 1];
             const batchLastSync = lastIssue ? lastIssue.fields.updated : undefined;
 
@@ -204,11 +216,32 @@ export class JiraConnector extends BaseConnector {
                     source: this.getSourceName() as DataSource,
                     syncToken: response.data.nextPageToken || undefined,
                     lastSync: batchLastSync || cursor?.lastSync,
+                    // Preserve the JQL in metadata so subsequent pages use the same query
+                    metadata: response.data.nextPageToken ? { jql } : undefined,
                 },
                 hasMore,
                 batchLastSync,
             };
         } catch (error) {
+            // If a stale page token caused the failure, end this run gracefully.
+            // The cursor's lastSync from the previous batch lets the next run resume.
+            if (
+                nextPageToken &&
+                axios.isAxiosError(error) &&
+                error.response?.status === 400
+            ) {
+                this.logger.warn(`Jira pagination failed (stale token) — ending run; next sync resumes from lastSync`);
+                return {
+                    documents: [],
+                    newCursor: {
+                        source: this.getSourceName() as DataSource,
+                        syncToken: undefined,
+                        lastSync: cursor?.lastSync,
+                    },
+                    hasMore: false,
+                };
+            }
+
             this.logger.error(`Failed to fetch from Jira: ${error.message}`);
             if (axios.isAxiosError(error) && error.response) {
                 this.logger.error(`Jira API response: ${JSON.stringify(error.response.data)}`);
@@ -323,7 +356,7 @@ export class JiraConnector extends BaseConnector {
                     status: issue.fields.status.name,
                     priority: issue.fields.priority?.name || 'None',
                     assignee: issue.fields.assignee?.displayName || null,
-                    reporter: issue.fields.reporter.displayName,
+                    reporter: issue.fields.reporter?.displayName || 'Unknown',
                     labels: issue.fields.labels,
                     components: issue.fields.components?.map(c => c.name) || [],
                     sprint: this.getSprintName(issue.fields[this.sprintFieldId]),

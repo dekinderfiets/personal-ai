@@ -1,6 +1,8 @@
 import {
     proxyActivities,
     sleep,
+    continueAsNew,
+    ContinueAsNew,
     executeChild,
     ParentClosePolicy,
 } from '@temporalio/workflow';
@@ -36,27 +38,38 @@ const mgmtActivities = proxyActivities<Activities>({
     },
 });
 
+// Max batches per workflow execution before using continueAsNew to reset
+// the Temporal history. Each batch creates ~4 history events, and
+// Temporal's default history limit is 50k events / ~50 MB.
+const MAX_BATCHES_PER_EXECUTION = 50;
+
 export async function indexSourceWorkflow(input: IndexSourceInput): Promise<IndexSourceResult> {
     const { source, request } = input;
-    const startedAt = new Date().toISOString();
-    let totalProcessed = 0;
+    const isContinuation = !!input._continuation;
+    const startedAt = input._continuation?.startedAt || new Date().toISOString();
+    let totalProcessed = input._continuation?.totalProcessed || 0;
 
     try {
-        await mgmtActivities.recordRunStart(source);
-        await mgmtActivities.updateStatus(source, {
-            status: 'running',
-            documentsIndexed: 0,
-            error: '',
-            lastError: undefined,
-        });
+        if (!isContinuation) {
+            await mgmtActivities.recordRunStart(source);
+            await mgmtActivities.updateStatus(source, {
+                status: 'running',
+                documentsIndexed: 0,
+                error: '',
+                lastError: undefined,
+            });
+        }
 
         // Load settings and detect config changes
         const settings = await mgmtActivities.loadSettings(source, request);
         const mergedRequest = settings.request;
         const configKey = settings.configKey;
 
-        let cursor = mergedRequest.fullReindex ? null : settings.cursor;
+        let cursor = mergedRequest.fullReindex && !isContinuation
+            ? null
+            : settings.cursor;
         let hasMore = true;
+        let batchCount = 0;
 
         while (hasMore) {
             const batch = await activities.fetchBatch(source, cursor, mergedRequest);
@@ -78,8 +91,18 @@ export async function indexSourceWorkflow(input: IndexSourceInput): Promise<Inde
             );
 
             hasMore = batch.hasMore;
+            batchCount++;
 
             if (hasMore) {
+                // Reset workflow history before it gets too large
+                if (batchCount >= MAX_BATCHES_PER_EXECUTION) {
+                    await continueAsNew<typeof indexSourceWorkflow>({
+                        source,
+                        request,
+                        _continuation: { totalProcessed, startedAt },
+                    });
+                }
+
                 // Adaptive delay to avoid rate limits
                 const delayMs = totalProcessed % 500 === 0 ? 2000 : 500;
                 await sleep(delayMs);
@@ -109,6 +132,11 @@ export async function indexSourceWorkflow(input: IndexSourceInput): Promise<Inde
             completedAt,
         };
     } catch (error) {
+        // continueAsNew throws ContinueAsNew — let it propagate
+        if (error instanceof ContinueAsNew) {
+            throw error;
+        }
+
         const completedAt = new Date().toISOString();
         const errorMessage = (error as Error).message;
 

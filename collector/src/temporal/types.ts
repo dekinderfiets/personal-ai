@@ -10,6 +10,11 @@ export type { DataSource };
 export interface IndexSourceInput {
     source: DataSource;
     request: SerializableIndexRequest;
+    /** Internal: carried across continueAsNew to track cumulative progress. */
+    _continuation?: {
+        totalProcessed: number;
+        startedAt: string;
+    };
 }
 
 export interface IndexSourceResult {
