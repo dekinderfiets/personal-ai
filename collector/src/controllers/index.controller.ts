@@ -53,6 +53,15 @@ export class IndexController {
         return this.indexingService.getAllStatus();
     }
 
+    @Delete(':source/status')
+    async resetStatus(@Param('source') source: string): Promise<{ message: string }> {
+        if (!VALID_SOURCES.includes(source as DataSource)) {
+            throw new HttpException(`Invalid source: ${source}`, HttpStatus.BAD_REQUEST);
+        }
+        await this.indexingService.resetStatusOnly(source as DataSource);
+        return { message: `Status reset for ${source}` };
+    }
+
     @Delete(':source')
     async deleteCollection(@Param('source') source: string): Promise<{ message: string }> {
         if (!VALID_SOURCES.includes(source as DataSource)) {

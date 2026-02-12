@@ -63,7 +63,7 @@ export const openaiConfig = registerAs('openai', () => ({
 }));
 
 export const temporalConfig = registerAs('temporal', () => ({
-    address: process.env.TEMPORAL_ADDRESS || '',
+    address: process.env.TEMPORAL_ADDRESS,
     namespace: process.env.TEMPORAL_NAMESPACE || 'default',
     taskQueue: process.env.TEMPORAL_TASK_QUEUE || 'collector-indexing',
 }));

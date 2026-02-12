@@ -79,7 +79,6 @@ class EnvironmentVariables {
     OPENAI_API_KEY: string;
 
     @IsString()
-    @IsOptional()
     TEMPORAL_ADDRESS: string;
 
     @IsString()

@@ -212,11 +212,11 @@ const Activity: React.FC = () => {
   const fetchWorkflows = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/workflows/recent?limit=20`);
-      if (!response.ok) return; // Temporal may not be available
+      if (!response.ok) return;
       const data: WorkflowInfo[] = await response.json();
       setWorkflows(data);
     } catch {
-      // Non-critical — Temporal may be disabled
+      // Network error — will retry on next poll
     }
   };
 

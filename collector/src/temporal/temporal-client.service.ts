@@ -27,23 +27,16 @@ export class TemporalClientService {
     }
 
     async connect(connection: any): Promise<void> {
-        // Dynamically import to get the Client class
         const { Client, WorkflowExecutionAlreadyStartedError } = await import('@temporalio/client');
         this.client = new Client({ connection, namespace: this.namespace });
         this.WorkflowExecutionAlreadyStartedError = WorkflowExecutionAlreadyStartedError;
         this.logger.log('Temporal client connected');
     }
 
-    isConnected(): boolean {
-        return this.client !== null;
-    }
-
     async startIndexSource(
         source: DataSource,
         request: SerializableIndexRequest = {},
     ): Promise<{ started: boolean; message: string; workflowId: string }> {
-        if (!this.client) throw new Error('Temporal client not connected');
-
         const workflowId = `index-${source}`;
         try {
             const handle = await this.client.workflow.start('indexSourceWorkflow', {
@@ -65,8 +58,6 @@ export class TemporalClientService {
         request: SerializableIndexRequest = {},
         sources?: DataSource[],
     ): Promise<{ started: boolean; message: string; workflowId: string }> {
-        if (!this.client) throw new Error('Temporal client not connected');
-
         const workflowId = 'collect-all';
         try {
             const handle = await this.client.workflow.start('collectAllWorkflow', {
@@ -85,8 +76,6 @@ export class TemporalClientService {
     }
 
     async listRecentWorkflows(limit = 20): Promise<WorkflowInfo[]> {
-        if (!this.client) throw new Error('Temporal client not connected');
-
         const workflows: WorkflowInfo[] = [];
         const iter = this.client.workflow.list({
             query: `TaskQueue = '${this.taskQueue}' ORDER BY StartTime DESC`,
@@ -113,8 +102,6 @@ export class TemporalClientService {
     }
 
     async getWorkflowStatus(workflowId: string): Promise<WorkflowInfo | null> {
-        if (!this.client) throw new Error('Temporal client not connected');
-
         try {
             const handle = this.client.workflow.getHandle(workflowId);
             const desc = await handle.describe();
@@ -134,15 +121,23 @@ export class TemporalClientService {
         }
     }
 
+    async isWorkflowRunning(workflowId: string): Promise<boolean> {
+        try {
+            const handle = this.client.workflow.getHandle(workflowId);
+            const desc = await handle.describe();
+            return desc.status.code === 1; // RUNNING
+        } catch {
+            return false;
+        }
+    }
+
     async cancelWorkflow(workflowId: string): Promise<void> {
-        if (!this.client) throw new Error('Temporal client not connected');
         const handle = this.client.workflow.getHandle(workflowId);
         await handle.cancel();
         this.logger.log(`Cancelled workflow ${workflowId}`);
     }
 
     async checkHealth(): Promise<boolean> {
-        if (!this.client) return false;
         try {
             const iter = this.client.workflow.list({ query: `TaskQueue = '${this.taskQueue}'` });
             for await (const _ of iter) {

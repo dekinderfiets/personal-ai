@@ -16,7 +16,7 @@ export class HealthController {
     async health() {
         let redisStatus = 'down';
         let chromaStatus = 'down';
-        let temporalStatus = 'disabled';
+        let temporalStatus = 'down';
 
         try {
             const ping = await (this.cursorService as any).redis.ping();
@@ -29,20 +29,15 @@ export class HealthController {
             chromaStatus = 'up';
         } catch (e) {}
 
-        if (this.temporalClient.isConnected()) {
-            try {
-                const healthy = await this.temporalClient.checkHealth();
-                temporalStatus = healthy ? 'up' : 'down';
-            } catch (e) {
-                temporalStatus = 'down';
-            }
-        }
+        try {
+            const healthy = await this.temporalClient.checkHealth();
+            temporalStatus = healthy ? 'up' : 'down';
+        } catch (e) {}
 
-        const coreUp = redisStatus === 'up' && chromaStatus === 'up';
-        const temporalOk = temporalStatus === 'up' || temporalStatus === 'disabled';
+        const allUp = redisStatus === 'up' && chromaStatus === 'up' && temporalStatus === 'up';
 
         return {
-            status: coreUp && temporalOk ? 'ok' : 'partial',
+            status: allUp ? 'ok' : 'partial',
             service: 'index-service',
             timestamp: new Date().toISOString(),
             dependencies: {

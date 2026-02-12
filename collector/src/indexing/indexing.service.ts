@@ -244,125 +244,25 @@ export class IndexingService {
     }
 
     // -------------------------------------------------------------------------
-    // Indexing entry points — delegate to Temporal when available
+    // Indexing entry points — delegate to Temporal
     // -------------------------------------------------------------------------
 
     async startIndexing(source: DataSource, request: IndexRequest = {}): Promise<{ started: boolean; message: string }> {
-        if (this.temporalClient.isConnected()) {
-            const result = await this.temporalClient.startIndexSource(source, request);
-            return { started: result.started, message: result.message };
-        }
-
-        // Legacy fallback: background promise with Redis lock
-        const lockAcquired = await this.cursorService.acquireLock(source);
-        if (!lockAcquired) {
-            return { started: false, message: 'Indexing already in progress' };
-        }
-
-        this.runIndexingLegacy(source, request).finally(() => {
-            this.cursorService.releaseLock(source);
-        });
-
-        return { started: true, message: 'Indexing started in background' };
+        const result = await this.temporalClient.startIndexSource(source, request);
+        return { started: result.started, message: result.message };
     }
 
     async indexAll(request: IndexRequest = {}): Promise<{ started: DataSource[]; skipped: DataSource[] }> {
-        if (this.temporalClient.isConnected()) {
-            const result = await this.temporalClient.startCollectAll(request);
-            if (result.started) {
-                return { started: this.allSources, skipped: [] };
-            }
-            return { started: [], skipped: this.allSources };
+        const result = await this.temporalClient.startCollectAll(request);
+        if (result.started) {
+            return { started: this.allSources, skipped: [] };
         }
-
-        // Legacy fallback
-        const started: DataSource[] = [];
-        const skipped: DataSource[] = [];
-
-        await Promise.all(this.allSources.map(async (source, index) => {
-            await new Promise(resolve => setTimeout(resolve, index * 1000));
-            const result = await this.startIndexing(source, request);
-            if (result.started) {
-                started.push(source);
-            } else {
-                skipped.push(source);
-            }
-        }));
-
-        return { started, skipped };
+        return { started: [], skipped: this.allSources };
     }
 
     // -------------------------------------------------------------------------
-    // Legacy background indexing (used when Temporal is not available)
+    // Indexing loop — called by Temporal activities
     // -------------------------------------------------------------------------
-
-    private async runIndexingLegacy(source: DataSource, request: IndexRequest): Promise<void> {
-        this.logger.log(`[Legacy] Starting indexing for ${source}...`);
-        const startedAt = new Date().toISOString();
-        const runId = await this.analyticsService.recordRunStart(source);
-        await this.updateStatus(source, {
-            status: 'running',
-            documentsIndexed: 0,
-            error: '',
-            lastError: undefined
-        });
-
-        let totalIndexed = 0;
-        try {
-            const connector = this.getConnector(source);
-            if (!connector.isConfigured()) {
-                throw new Error(`Connector for ${source} is not configured.`);
-            }
-
-            const settings = await this.settingsService.getSettings(source);
-            if (settings) {
-                this.applySettingsToRequest(source, settings, request);
-            }
-
-            const cursor = await this.cursorService.getCursor(source);
-            const currentConfig = this.extractConfigKey(source, request);
-            const lastConfig = cursor?.metadata?.configKey;
-
-            if (lastConfig && currentConfig !== lastConfig && !request.fullReindex) {
-                request.fullReindex = true;
-            }
-
-            totalIndexed = await this.runIndexingLoop(source, request, connector, currentConfig);
-
-            await this.updateStatus(source, {
-                status: 'completed',
-                lastSync: new Date().toISOString(),
-            });
-
-            await this.analyticsService.recordRunComplete(source, {
-                runId,
-                documentsProcessed: totalIndexed,
-                documentsNew: totalIndexed,
-                documentsUpdated: 0,
-                documentsSkipped: 0,
-                startedAt,
-            });
-        } catch (error) {
-            const errorMessage = (error as Error).message;
-            this.logger.error(`Indexing failed for ${source}: ${errorMessage}`, (error as Error).stack);
-            await this.updateStatus(source, {
-                status: 'error',
-                error: errorMessage,
-                lastError: errorMessage,
-                lastErrorAt: new Date().toISOString()
-            });
-
-            await this.analyticsService.recordRunComplete(source, {
-                runId,
-                documentsProcessed: totalIndexed,
-                documentsNew: 0,
-                documentsUpdated: 0,
-                documentsSkipped: 0,
-                startedAt,
-                error: errorMessage,
-            });
-        }
-    }
 
     private async runIndexingLoop(source: DataSource, request: IndexRequest, connector: BaseConnector, configKey?: string): Promise<number> {
         let totalProcessed = 0;
@@ -427,11 +327,47 @@ export class IndexingService {
 
     async getStatus(source: DataSource): Promise<IndexStatus> {
         const status = await this.cursorService.getJobStatus(source);
-        return status || { source, status: 'idle', lastSync: null, documentsIndexed: 0 };
+        if (!status) return { source, status: 'idle', lastSync: null, documentsIndexed: 0 };
+
+        if (status.status === 'running') {
+            const actuallyRunning = await this.isActuallyRunning(source);
+            if (!actuallyRunning) {
+                this.logger.warn(`Stale 'running' status detected for ${source}, resetting to idle`);
+                status.status = 'idle';
+                await this.cursorService.saveJobStatus(status);
+                await this.cursorService.releaseLock(source);
+            }
+        }
+        return status;
     }
 
     async getAllStatus(): Promise<IndexStatus[]> {
-        return this.cursorService.getAllJobStatus(this.allSources);
+        const statuses = await this.cursorService.getAllJobStatus(this.allSources);
+
+        const staleChecks = statuses.map(async (status) => {
+            if (status.status === 'running') {
+                const actuallyRunning = await this.isActuallyRunning(status.source);
+                if (!actuallyRunning) {
+                    this.logger.warn(`Stale 'running' status detected for ${status.source}, resetting to idle`);
+                    status.status = 'idle';
+                    await this.cursorService.saveJobStatus(status);
+                    await this.cursorService.releaseLock(status.source);
+                }
+            }
+            return status;
+        });
+
+        return Promise.all(staleChecks);
+    }
+
+    async resetStatusOnly(source: DataSource): Promise<void> {
+        await this.cursorService.resetStatus(source);
+        await this.cursorService.releaseLock(source);
+        this.logger.log(`Status and lock reset for ${source} (cursor preserved)`);
+    }
+
+    private async isActuallyRunning(source: DataSource): Promise<boolean> {
+        return this.temporalClient.isWorkflowRunning(`index-${source}`);
     }
 
     async resetCursor(source: DataSource): Promise<void> {

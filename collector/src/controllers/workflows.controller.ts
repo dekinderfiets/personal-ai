@@ -1,26 +1,25 @@
 import { Controller, Get, Delete, Param, Query, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
 import { TemporalClientService, WorkflowInfo } from '../temporal/temporal-client.service';
+import { IndexingService } from '../indexing/indexing.service';
+import { DataSource } from '../types';
 import { ApiKeyGuard } from '../auth/api-key.guard';
 
 @Controller('workflows')
 @UseGuards(ApiKeyGuard)
 export class WorkflowsController {
-    constructor(private temporalClient: TemporalClientService) {}
+    constructor(
+        private temporalClient: TemporalClientService,
+        private indexingService: IndexingService,
+    ) {}
 
     @Get('recent')
     async listRecent(@Query('limit') limit?: string): Promise<WorkflowInfo[]> {
-        if (!this.temporalClient.isConnected()) {
-            return [];
-        }
         const parsedLimit = limit ? parseInt(limit, 10) : 20;
         return this.temporalClient.listRecentWorkflows(parsedLimit);
     }
 
     @Get(':workflowId')
-    async getWorkflow(@Param('workflowId') workflowId: string): Promise<WorkflowInfo | { message: string }> {
-        if (!this.temporalClient.isConnected()) {
-            return { message: 'Temporal not enabled' };
-        }
+    async getWorkflow(@Param('workflowId') workflowId: string): Promise<WorkflowInfo> {
         const info = await this.temporalClient.getWorkflowStatus(workflowId);
         if (!info) {
             throw new HttpException(`Workflow ${workflowId} not found`, HttpStatus.NOT_FOUND);
@@ -30,10 +29,15 @@ export class WorkflowsController {
 
     @Delete(':workflowId')
     async cancelWorkflow(@Param('workflowId') workflowId: string): Promise<{ message: string }> {
-        if (!this.temporalClient.isConnected()) {
-            return { message: 'Temporal not enabled' };
+        const source = workflowId.replace(/^index-/, '') as DataSource;
+
+        try {
+            await this.temporalClient.cancelWorkflow(workflowId);
+        } catch {
+            // Workflow doesn't exist or already finished — still clear stale status below
         }
-        await this.temporalClient.cancelWorkflow(workflowId);
+
+        await this.indexingService.resetStatusOnly(source);
         return { message: `Workflow ${workflowId} cancelled` };
     }
 }

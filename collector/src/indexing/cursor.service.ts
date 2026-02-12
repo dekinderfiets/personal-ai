@@ -102,11 +102,6 @@ export class CursorService implements OnModuleInit, OnModuleDestroy {
 
     // --- Lock Methods ---
 
-    async acquireLock(source: DataSource, ttlSeconds = 3600): Promise<boolean> {
-        const res = await this.redis.set(this.getLockKey(source), 'locked', 'EX', ttlSeconds, 'NX');
-        return res === 'OK';
-    }
-
     async releaseLock(source: DataSource): Promise<void> {
         await this.redis.del(this.getLockKey(source));
     }
