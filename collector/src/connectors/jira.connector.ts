@@ -21,6 +21,11 @@ interface JiraIssue {
         project: { key: string };
         created: string;
         updated: string;
+        issuelinks?: Array<{
+            type: { name: string; inward: string; outward: string };
+            inwardIssue?: { key: string };
+            outwardIssue?: { key: string };
+        }>;
         comment?: {
             comments: Array<{
                 id: string;
@@ -46,7 +51,7 @@ interface JiraIssue {
 @Injectable()
 export class JiraConnector extends BaseConnector {
     private readonly logger = new Logger(JiraConnector.name);
-    private readonly pageSize = 50;
+    private readonly pageSize = 100;
     private baseUrl: string;
     private authHeader: string;
     private sprintFieldId: string;
@@ -107,7 +112,7 @@ export class JiraConnector extends BaseConnector {
                 fields: [
                     'summary', 'description', 'issuetype', 'status', 'priority',
                     'assignee', 'reporter', 'labels', 'components', 'project',
-                    'created', 'updated', 'comment', this.sprintFieldId,
+                    'created', 'updated', 'comment', 'issuelinks', this.sprintFieldId,
                 ],
             };
             if (nextPageToken) {
@@ -150,6 +155,7 @@ export class JiraConnector extends BaseConnector {
                         labels: issue.fields.labels,
                         components: issue.fields.components?.map(c => c.name) || [],
                         sprint: this.getSprintName(issue.fields[this.sprintFieldId]),
+                        linkedIssues: JSON.stringify(this.extractLinkedIssues(issue.fields.issuelinks)),
                         createdAt: issue.fields.created,
                         updatedAt: issue.fields.updated,
                         url: `${this.baseUrl}/browse/${issue.key}`,
@@ -218,8 +224,26 @@ export class JiraConnector extends BaseConnector {
             selectors: [
                 { selector: 'a', options: { ignoreHref: true } },
                 { selector: 'img', format: 'skip' },
+                { selector: 'pre', format: 'block', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
+                { selector: 'code', format: 'inline' },
+                { selector: 'table', format: 'dataTable' },
+                { selector: 'h1', options: { uppercase: false, prefix: '# ' } },
+                { selector: 'h2', options: { uppercase: false, prefix: '## ' } },
+                { selector: 'h3', options: { uppercase: false, prefix: '### ' } },
             ],
         });
+    }
+
+    private extractLinkedIssues(issuelinks?: JiraIssue['fields']['issuelinks']): Array<{ type: string; key: string; direction: 'inward' | 'outward' }> {
+        if (!issuelinks || issuelinks.length === 0) return [];
+        return issuelinks.map(link => {
+            if (link.inwardIssue) {
+                return { type: link.type.name, key: link.inwardIssue.key, direction: 'inward' as const };
+            } else if (link.outwardIssue) {
+                return { type: link.type.name, key: link.outwardIssue.key, direction: 'outward' as const };
+            }
+            return null;
+        }).filter((item): item is { type: string; key: string; direction: 'inward' | 'outward' } => item !== null);
     }
 
     private buildIssueContent(issue: JiraIssue): string {
@@ -276,7 +300,7 @@ export class JiraConnector extends BaseConnector {
                 },
                 params: {
                     expand: 'renderedFields',
-                    fields: `summary,description,issuetype,status,priority,assignee,reporter,labels,components,project,created,updated,comment,${this.sprintFieldId}`,
+                    fields: `summary,description,issuetype,status,priority,assignee,reporter,labels,components,project,created,updated,comment,issuelinks,${this.sprintFieldId}`,
                 },
             });
 
@@ -303,6 +327,7 @@ export class JiraConnector extends BaseConnector {
                     labels: issue.fields.labels,
                     components: issue.fields.components?.map(c => c.name) || [],
                     sprint: this.getSprintName(issue.fields[this.sprintFieldId]),
+                    linkedIssues: JSON.stringify(this.extractLinkedIssues(issue.fields.issuelinks)),
                     createdAt: issue.fields.created,
                     updatedAt: issue.fields.updated,
                     url: `${this.baseUrl}/browse/${issue.key}`,

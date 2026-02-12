@@ -115,6 +115,18 @@ export class IndexingService {
     }
 
     addRelevanceWeights(source: DataSource, documents: IndexDocument[]): IndexDocument[] {
+        // Pre-compute thread counts for Gmail documents in this batch
+        let threadCounts: Map<string, number> | undefined;
+        if (source === 'gmail') {
+            threadCounts = new Map();
+            for (const doc of documents) {
+                const tid = (doc.metadata as any)?.threadId;
+                if (tid) {
+                    threadCounts.set(tid, (threadCounts.get(tid) || 0) + 1);
+                }
+            }
+        }
+
         return documents.map(doc => {
             const metadata = { ...doc.metadata } as any;
 
@@ -122,7 +134,14 @@ export class IndexingService {
                 case 'gmail':
                     metadata.recipient_count = ((metadata.to || []).length + (metadata.cc || []).length);
                     metadata.is_internal = this.isInternalEmail(metadata.from);
-                    metadata.thread_depth = 1;
+                    // Use connector-provided thread message count if available,
+                    // otherwise compute from the batch, or omit entirely
+                    if (metadata.threadMessageCount != null) {
+                        metadata.thread_depth = metadata.threadMessageCount;
+                    } else if (metadata.threadId && threadCounts?.has(metadata.threadId)) {
+                        metadata.thread_depth = threadCounts.get(metadata.threadId);
+                    }
+                    // If neither is available, thread_depth is left undefined rather than hardcoded
                     metadata.relevance_score = this.computeGmailRelevance(metadata);
                     break;
 
@@ -177,12 +196,14 @@ export class IndexingService {
             let retries = 3;
             while (retries > 0) {
                 try {
-                    await Promise.all([
-                        this.fileSaverService.saveDocuments(source, documentsToIndex),
-                        this.chromaService.upsertDocuments(source, documentsToIndex).catch(err => {
-                            this.logger.warn(`ChromaDB upsert failed for ${source} (non-fatal): ${err.message}`);
-                        }),
-                    ]);
+                    // Save files independently (non-blocking for hash updates)
+                    this.fileSaverService.saveDocuments(source, documentsToIndex).catch(err => {
+                        this.logger.warn(`File save failed for ${source} (non-fatal): ${err.message}`);
+                    });
+
+                    // ChromaDB upsert must succeed before we update hashes.
+                    // If it fails, hashes stay stale so documents are retried on next sync.
+                    await this.chromaService.upsertDocuments(source, documentsToIndex);
 
                     const newHashes: Record<string, string> = {};
                     documentsToIndex.forEach(doc => {
@@ -518,9 +539,14 @@ export class IndexingService {
             case 'drive':
             case 'calendar':
             case 'gmail': {
-                // Compare against the Atlassian email as the best available user identifier
-                const email = this.configService.get<string>('jira.username', '').toLowerCase();
-                return email !== '' && v === email;
+                // Prefer GOOGLE_USER_EMAIL for Google services
+                const googleEmail = this.configService.get<string>('google.userEmail', '').toLowerCase();
+                if (googleEmail) {
+                    return v === googleEmail;
+                }
+                // Fall back to Atlassian email if GOOGLE_USER_EMAIL is not configured
+                const atlassianEmail = this.configService.get<string>('jira.username', '').toLowerCase();
+                return atlassianEmail !== '' && v === atlassianEmail;
             }
             default:
                 return false;
@@ -531,6 +557,14 @@ export class IndexingService {
         if (!from) return false;
         const domain = from.split('@')[1]?.toLowerCase();
         if (!domain) return false;
+
+        const companyDomainsStr = this.configService.get<string>('app.companyDomains', '');
+        if (companyDomainsStr) {
+            const companyDomains = companyDomainsStr.split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
+            return companyDomains.includes(domain);
+        }
+
+        // Fallback: if no company domains configured, use the original heuristic
         const publicDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com'];
         return !publicDomains.includes(domain);
     }

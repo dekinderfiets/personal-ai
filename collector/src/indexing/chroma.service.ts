@@ -48,7 +48,8 @@ export class ChromaService implements OnModuleInit {
 
             const openaiApiKey = this.configService.get<string>('openai.apiKey');
             if (openaiApiKey) {
-                this.embeddingFunction = new OpenAIEmbedder(openaiApiKey);
+                const embeddingModel = this.configService.get<string>('openai.embeddingModel') || 'text-embedding-3-small';
+                this.embeddingFunction = new OpenAIEmbedder(openaiApiKey, embeddingModel);
             } else {
                 this.logger.warn('OPENAI_API_KEY not set - ChromaDB will use default embeddings');
             }
@@ -85,7 +86,39 @@ export class ChromaService implements OnModuleInit {
         const chunks: string[] = [];
         let start = 0;
         while (start < content.length) {
-            const end = Math.min(start + CHUNK_SIZE, content.length);
+            let end = Math.min(start + CHUNK_SIZE, content.length);
+
+            // If not at the end, find a good boundary
+            if (end < content.length) {
+                const windowStart = start + Math.floor(CHUNK_SIZE * 0.8);
+                const window = content.slice(windowStart, end);
+
+                // Try paragraph break first
+                const paraIdx = window.lastIndexOf('\n\n');
+                if (paraIdx !== -1) {
+                    end = windowStart + paraIdx + 2; // include the \n\n
+                } else {
+                    // Try line break
+                    const lineIdx = window.lastIndexOf('\n');
+                    if (lineIdx !== -1) {
+                        end = windowStart + lineIdx + 1;
+                    } else {
+                        // Try sentence boundary
+                        const sentenceMatch = window.match(/.*[.!?]\s/s);
+                        if (sentenceMatch) {
+                            end = windowStart + sentenceMatch[0].length;
+                        } else {
+                            // Try word boundary
+                            const spaceIdx = window.lastIndexOf(' ');
+                            if (spaceIdx !== -1) {
+                                end = windowStart + spaceIdx + 1;
+                            }
+                            // else: stick with the fixed end position
+                        }
+                    }
+                }
+            }
+
             chunks.push(content.slice(start, end));
             start = end - CHUNK_OVERLAP;
             if (start + CHUNK_OVERLAP >= content.length) break;

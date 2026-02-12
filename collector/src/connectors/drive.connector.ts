@@ -29,6 +29,7 @@ interface DriveFile {
 export class DriveConnector extends BaseConnector {
     private readonly logger = new Logger(DriveConnector.name);
     private folderPathCache: Map<string, string> = new Map();
+    private subfolderCache: Map<string, string[]> = new Map();
 
     constructor(
         private configService: ConfigService,
@@ -66,7 +67,9 @@ export class DriveConnector extends BaseConnector {
                 conditions.push(`modifiedTime > '${lastSync}'`);
             }
             if (request.folderIds?.length) {
-                const folderConditions = request.folderIds.map(id => `'${id}' in parents`).join(' or ');
+                // Recursively resolve all subfolder IDs under each configured folder
+                const allFolderIds = await this.resolveAllSubfolderIds(token, request.folderIds);
+                const folderConditions = allFolderIds.map(id => `'${id}' in parents`).join(' or ');
                 conditions.push(`(${folderConditions})`);
             }
 
@@ -75,7 +78,7 @@ export class DriveConnector extends BaseConnector {
                 headers: { 'Authorization': `Bearer ${token}` },
                 params: {
                     q: conditions.join(' and '),
-                    pageSize: 50,
+                    pageSize: 100,
                     pageToken: pageToken || undefined,
                     fields: 'nextPageToken,files(id,name,mimeType,parents,owners,createdTime,modifiedTime,webViewLink,permissions)',
                     orderBy: 'modifiedTime asc', // Process oldest changes first
@@ -381,6 +384,75 @@ export class DriveConnector extends BaseConnector {
         });
 
         return response.data.files || [];
+    }
+
+    /**
+     * Recursively resolves all subfolder IDs under each of the given parent folder IDs.
+     * Returns a deduplicated list containing the original parent IDs plus all descendant folder IDs.
+     * Results are cached per parent folder to avoid redundant API calls across pagination batches.
+     */
+    private async resolveAllSubfolderIds(token: string, parentFolderIds: string[]): Promise<string[]> {
+        const allIds = new Set<string>(parentFolderIds);
+
+        for (const parentId of parentFolderIds) {
+            const descendants = await this.getDescendantFolderIds(token, parentId);
+            for (const id of descendants) {
+                allIds.add(id);
+            }
+        }
+
+        this.logger.debug(`Resolved ${parentFolderIds.length} configured folders into ${allIds.size} total folders (including subfolders)`);
+        return Array.from(allIds);
+    }
+
+    /**
+     * Recursively fetches all descendant folder IDs under a given parent folder.
+     * Uses subfolderCache to avoid redundant API calls.
+     */
+    private async getDescendantFolderIds(token: string, folderId: string): Promise<string[]> {
+        if (this.subfolderCache.has(folderId)) {
+            return this.subfolderCache.get(folderId)!;
+        }
+
+        const descendants: string[] = [];
+        const queue: string[] = [folderId];
+        const visited = new Set<string>();
+
+        while (queue.length > 0) {
+            const currentId = queue.shift()!;
+            if (visited.has(currentId)) continue;
+            visited.add(currentId);
+
+            try {
+                let pageToken: string | undefined;
+                do {
+                    const response = await axios.get<{ files: Array<{ id: string }>; nextPageToken?: string }>(
+                        'https://www.googleapis.com/drive/v3/files',
+                        {
+                            headers: { 'Authorization': `Bearer ${token}` },
+                            params: {
+                                q: `'${currentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+                                fields: 'nextPageToken,files(id)',
+                                pageSize: 100,
+                                pageToken: pageToken || undefined,
+                            },
+                        },
+                    );
+
+                    const subfolders = response.data.files || [];
+                    for (const folder of subfolders) {
+                        descendants.push(folder.id);
+                        queue.push(folder.id);
+                    }
+                    pageToken = response.data.nextPageToken;
+                } while (pageToken);
+            } catch (error) {
+                this.logger.warn(`Failed to list subfolders for ${currentId}: ${(error as Error).message}`);
+            }
+        }
+
+        this.subfolderCache.set(folderId, descendants);
+        return descendants;
     }
 
     private getFileType(mimeType: string): 'document' | 'spreadsheet' | 'presentation' | 'pdf' | 'other' {

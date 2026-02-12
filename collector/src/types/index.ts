@@ -26,6 +26,7 @@ export interface JiraDocument extends BaseDocument {
         labels?: string[];
         components?: string[];
         sprint?: string | null;
+        linkedIssues?: string;
         createdAt: string;
         updatedAt: string;
         url: string;
@@ -58,6 +59,11 @@ export interface SlackDocument extends BaseDocument {
         url: string;
         parentId?: string;
         search_context?: string;
+        // Reaction metadata
+        reactionCount?: number;
+        topReactions?: string[];
+        // Bot indicator
+        is_bot?: boolean;
         // Relevance weights
         relevance_score?: number;
         channel_type?: 'dm' | 'private' | 'public' | 'mpim';

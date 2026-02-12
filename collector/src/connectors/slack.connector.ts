@@ -12,6 +12,7 @@ interface SlackMessage {
     reply_count?: number;
     files?: { name: string }[];
     subtype?: string;
+    reactions?: { name: string; count: number }[];
 }
 
 interface SlackChannel {
@@ -112,14 +113,15 @@ export class SlackConnector extends BaseConnector implements OnModuleInit {
         let maxTs = parseFloat(state.latestSeenTs);
 
         for (const message of messages) {
-            if (message.subtype === 'bot_message' || !message.user) continue;
+            if (!message.user && message.subtype !== 'bot_message') continue;
 
+            const isBot = message.subtype === 'bot_message';
             const messageTs = parseFloat(message.ts);
             if (messageTs > maxTs) {
                 maxTs = messageTs;
             }
 
-            const author = await this.getUser(message.user);
+            const author = message.user ? await this.getUser(message.user) : null;
             const mentionedUsers = this.extractMentionedUsers(message.text);
             const mentionedUsersNames = await Promise.all(
                 mentionedUsers.map(async (u) => {
@@ -141,24 +143,39 @@ export class SlackConnector extends BaseConnector implements OnModuleInit {
             const isThreadStarter = message.reply_count && message.reply_count > 0 && !message.thread_ts;
             const isIndividualMessage = !message.thread_ts || message.thread_ts === message.ts;
 
+            // Compute reaction metadata
+            const reactionCount = message.reactions
+                ? message.reactions.reduce((sum, r) => sum + r.count, 0)
+                : 0;
+            const topReactions = message.reactions
+                ? [...message.reactions].sort((a, b) => b.count - a.count).slice(0, 3).map(r => r.name)
+                : [];
+
+            // Build title with channel name and message text preview
+            const textPreview = formattedText.substring(0, 80);
+            const title = `#${channel.name}: ${textPreview}`;
+
             documents.push({
                 id: `slack_${channel.id}_${message.ts}`,
                 source: 'slack',
-                content: `### Message in #${channel.name}\n**Author**: ${author?.real_name || author?.name || message.user}\n**Time**: ${new Date(messageTs * 1000).toLocaleString()}\n\n${formattedText}`,
+                content: `### Message in #${channel.name}\n**Author**: ${author?.real_name || author?.name || message.user || 'Bot'}\n**Time**: ${new Date(messageTs * 1000).toLocaleString()}\n\n${formattedText}`,
                 metadata: {
                     id: `slack_${channel.id}_${message.ts}`,
                     source: 'slack',
                     type: isIndividualMessage ? 'message' : 'thread_reply',
-                    title: isIndividualMessage ? `Message in #${channel.name}` : `Thread starter in #${channel.name}`,
+                    title,
                     channel: channel.name,
                     channelId: channel.id,
-                    author: author?.real_name || author?.name || message.user,
-                    authorId: message.user,
+                    author: author?.real_name || author?.name || message.user || 'Bot',
+                    authorId: message.user || '',
                     threadTs: message.thread_ts || null,
                     timestamp: new Date(messageTs * 1000).toISOString(),
                     hasAttachments: !!(message.files?.length),
                     mentionedUsers: mentionedUsersNames.filter(Boolean),
                     url: `https://app.slack.com/client/${this.teamId}/${channel.id}/p${message.ts.replace('.', '')}`,
+                    reactionCount,
+                    topReactions,
+                    is_bot: isBot,
                 },
             });
 
@@ -189,25 +206,42 @@ export class SlackConnector extends BaseConnector implements OnModuleInit {
                         formattedReplyText = formattedReplyText.replace(mentionRegex, `@${userName}`);
                     }
 
+                    const isReplyBot = reply.subtype === 'bot_message';
+
+                    // Compute reaction metadata for reply
+                    const replyReactionCount = reply.reactions
+                        ? reply.reactions.reduce((sum, r) => sum + r.count, 0)
+                        : 0;
+                    const replyTopReactions = reply.reactions
+                        ? [...reply.reactions].sort((a, b) => b.count - a.count).slice(0, 3).map(r => r.name)
+                        : [];
+
+                    // Build title with channel name and reply text preview
+                    const replyTextPreview = formattedReplyText.substring(0, 80);
+                    const replyTitle = `#${channel.name}: ${replyTextPreview}`;
+
                     documents.push({
                         id: `slack_${channel.id}_${reply.ts}`,
                         source: 'slack',
-                        content: `### Thread Reply in #${channel.name}\n**Author**: ${replyAuthor?.real_name || replyAuthor?.name || reply.user}\n**Time**: ${new Date(replyTs * 1000).toLocaleString()}\n**Context**: Reply to message ${message.ts}\n\n${formattedReplyText}`,
+                        content: `### Thread Reply in #${channel.name}\n**Author**: ${replyAuthor?.real_name || replyAuthor?.name || reply.user || 'Bot'}\n**Time**: ${new Date(replyTs * 1000).toLocaleString()}\n**Context**: Reply to message ${message.ts}\n\n${formattedReplyText}`,
                         metadata: {
                             id: `slack_${channel.id}_${reply.ts}`,
                             source: 'slack',
                             type: 'thread_reply',
-                            title: `Thread reply in #${channel.name} by ${replyAuthor?.real_name || replyAuthor?.name || reply.user}`,
+                            title: replyTitle,
                             parentId: `slack_${channel.id}_${message.ts}`,
                             channel: channel.name,
                             channelId: channel.id,
-                            author: replyAuthor?.real_name || replyAuthor?.name || reply.user,
-                            authorId: reply.user,
+                            author: replyAuthor?.real_name || replyAuthor?.name || reply.user || 'Bot',
+                            authorId: reply.user || '',
                             threadTs: message.ts,
                             timestamp: new Date(replyTs * 1000).toISOString(),
                             hasAttachments: !!(reply.files?.length),
                             mentionedUsers: replyMentionedUsersNames.filter(Boolean),
                             url: `https://app.slack.com/client/${this.teamId}/${channel.id}/p${reply.ts.replace('.', '')}`,
+                            reactionCount: replyReactionCount,
+                            topReactions: replyTopReactions,
+                            is_bot: isReplyBot,
                         },
                     });
                 }
