@@ -900,7 +900,7 @@ const Settings: React.FC = () => {
             control={
               <Switch
                 size="small"
-                checked={currentSettings?.indexFiles || false}
+                checked={currentSettings?.indexFiles !== false}
                 onChange={(e) => handleSettingChange('indexFiles', e.target.checked)}
               />
             }

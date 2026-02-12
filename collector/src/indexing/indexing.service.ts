@@ -102,7 +102,7 @@ export class IndexingService {
             case 'confluence': return (request.spaceKeys || []).sort().join(',');
             case 'drive': return (request.folderIds || []).sort().join(',');
             case 'calendar': return (request.calendarIds || []).sort().join(',');
-            case 'github': return (request.repos || []).sort().join(',');
+            case 'github': return `${(request.repos || []).sort().join(',')};files=${request.indexFiles !== false}`;
             case 'gmail':
                 const g = request.gmailSettings;
                 return JSON.stringify({

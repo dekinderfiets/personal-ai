@@ -193,7 +193,7 @@ export class GitHubConnector extends BaseConnector {
             for (const repo of repos) {
                 state.repoDefaultBranches[repo.full_name] = repo.default_branch;
             }
-            state.indexFiles = !!request.indexFiles;
+            state.indexFiles = request.indexFiles !== false;
             state.phase = 'issues';
             state.repoIdx = 0;
             state.page = 1;
@@ -251,9 +251,7 @@ export class GitHubConnector extends BaseConnector {
                 }
             }
 
-            const hasMore = state.phase !== 'repos' || state.repoIdx !== 0 || documents.length > 0
-                ? state.repoIdx < state.repos.length || state.phase === 'files'
-                : false;
+            const hasMore = state.phase !== 'repos';
 
             return {
                 documents,
