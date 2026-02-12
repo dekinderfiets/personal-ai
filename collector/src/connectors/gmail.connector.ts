@@ -259,7 +259,7 @@ export class GmailConnector extends BaseConnector {
             `**Date**: ${new Date(date).toLocaleString()}`,
             '',
             '## Content',
-            body.substring(0, 30000)
+            body
         ].filter(Boolean).join('\n');
 
         return {

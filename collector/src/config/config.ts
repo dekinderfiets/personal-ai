@@ -5,6 +5,7 @@ export const appConfig = registerAs('app', () => ({
     port: parseInt(process.env.PORT || '8087', 10),
     globalApiPrefix: process.env.GLOBAL_API_PREFIX || 'api/v1',
     apiKey: process.env.API_KEY,
+    companyDomains: process.env.COMPANY_DOMAINS || '',
 }));
 
 export const redisConfig = registerAs('redis', () => ({
@@ -33,6 +34,7 @@ export const googleConfig = registerAs('google', () => ({
     clientId: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
     refreshToken: process.env.GOOGLE_REFRESH_TOKEN,
+    userEmail: process.env.GOOGLE_USER_EMAIL || '',
     gmailLabelsToIndex: [],
     gmailDomainsToIndex: [],
     driveFoldersToIndex: [],
@@ -57,6 +59,7 @@ export const chromaConfig = registerAs('chroma', () => ({
 
 export const openaiConfig = registerAs('openai', () => ({
     apiKey: process.env.OPENAI_API_KEY,
+    embeddingModel: process.env.OPENAI_EMBEDDING_MODEL || '',
 }));
 
 export const temporalConfig = registerAs('temporal', () => ({

@@ -24,7 +24,7 @@ interface ConfluencePage {
 @Injectable()
 export class ConfluenceConnector extends BaseConnector {
     private readonly logger = new Logger(ConfluenceConnector.name);
-    private readonly pageSize = 25;
+    private readonly pageSize = 50;
     private baseUrl: string;
     private authHeader: string;
     private seenPageIds = new Set<string>();
@@ -202,6 +202,12 @@ export class ConfluenceConnector extends BaseConnector {
             selectors: [
                 { selector: 'a', options: { ignoreHref: true } },
                 { selector: 'img', format: 'skip' },
+                { selector: 'pre', format: 'block', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
+                { selector: 'code', format: 'inline' },
+                { selector: 'table', format: 'dataTable' },
+                { selector: 'h1', options: { uppercase: false, prefix: '# ' } },
+                { selector: 'h2', options: { uppercase: false, prefix: '## ' } },
+                { selector: 'h3', options: { uppercase: false, prefix: '### ' } },
             ],
         });
     }
