@@ -152,7 +152,7 @@ export class SlackConnector extends BaseConnector implements OnModuleInit {
                 : [];
 
             // Build title with channel name and message text preview
-            const textPreview = formattedText.substring(0, 80);
+            const textPreview = formattedText.replace(/\n+/g, ' ').substring(0, 80).trim();
             const title = `#${channel.name}: ${textPreview}`;
 
             documents.push({
@@ -186,8 +186,10 @@ export class SlackConnector extends BaseConnector implements OnModuleInit {
                 for (const reply of threadMessages) {
                     // Skip the first message as it's the thread starter we already indexed
                     if (reply.ts === message.ts) continue;
+                    // Skip system messages (no user and not a bot)
+                    if (!reply.user && reply.subtype !== 'bot_message') continue;
 
-                    const replyAuthor = await this.getUser(reply.user);
+                    const replyAuthor = reply.user ? await this.getUser(reply.user) : null;
                     const replyTs = parseFloat(reply.ts);
                     const replyMentionedUsers = this.extractMentionedUsers(reply.text);
                     const replyMentionedUsersNames = await Promise.all(
@@ -217,7 +219,7 @@ export class SlackConnector extends BaseConnector implements OnModuleInit {
                         : [];
 
                     // Build title with channel name and reply text preview
-                    const replyTextPreview = formattedReplyText.substring(0, 80);
+                    const replyTextPreview = formattedReplyText.replace(/\n+/g, ' ').substring(0, 80).trim();
                     const replyTitle = `#${channel.name}: ${replyTextPreview}`;
 
                     documents.push({
