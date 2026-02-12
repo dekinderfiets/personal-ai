@@ -9,7 +9,7 @@ describe('SearchController', () => {
             search: jest.fn(),
             navigate: jest.fn(),
         };
-        controller = new SearchController(mockChromaService);
+        controller = new SearchController(mockChromaService, {} as any);
     });
 
     describe('search', () => {

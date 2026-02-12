@@ -127,7 +127,7 @@ describe('JiraConnector', () => {
             await connector.fetch(null, { projectKeys: ['PROJ', 'TEAM'] });
 
             const call = mockedAxios.post.mock.calls[0];
-            expect(call[1].jql).toContain('project IN (PROJ,TEAM)');
+            expect((call[1] as any).jql).toContain('project IN (PROJ,TEAM)');
         });
 
         it('should add lastSync condition for incremental sync', async () => {
@@ -137,7 +137,7 @@ describe('JiraConnector', () => {
             await connector.fetch(cursor, {});
 
             const call = mockedAxios.post.mock.calls[0];
-            expect(call[1].jql).toContain('updated >= "2024-06-01 10:30"');
+            expect((call[1] as any).jql).toContain('updated >= "2024-06-01 10:30"');
         });
 
         it('should combine project keys and lastSync in JQL', async () => {
@@ -147,9 +147,9 @@ describe('JiraConnector', () => {
             await connector.fetch(cursor, { projectKeys: ['PROJ'] });
 
             const call = mockedAxios.post.mock.calls[0];
-            expect(call[1].jql).toContain('project IN (PROJ)');
-            expect(call[1].jql).toContain('updated >= "2024-06-01 10:30"');
-            expect(call[1].jql).toContain('AND');
+            expect((call[1] as any).jql).toContain('project IN (PROJ)');
+            expect((call[1] as any).jql).toContain('updated >= "2024-06-01 10:30"');
+            expect((call[1] as any).jql).toContain('AND');
         });
 
         it('should skip lastSync filter on fullReindex and use default date bound', async () => {
@@ -160,8 +160,8 @@ describe('JiraConnector', () => {
 
             const call = mockedAxios.post.mock.calls[0];
             // fullReindex skips the lastSync condition, but -365d fallback is added
-            expect(call[1].jql).not.toContain('2024-06-01');
-            expect(call[1].jql).toContain('updated >= -365d');
+            expect((call[1] as any).jql).not.toContain('2024-06-01');
+            expect((call[1] as any).jql).toContain('updated >= -365d');
         });
 
         it('should reuse JQL from cursor metadata when paginating with nextPageToken', async () => {
@@ -178,8 +178,8 @@ describe('JiraConnector', () => {
 
             const call = mockedAxios.post.mock.calls[0];
             // Should use the saved JQL, not build a new one with 'NEW'
-            expect(call[1].jql).toBe(savedJql);
-            expect(call[1].nextPageToken).toBe('some-page-token');
+            expect((call[1] as any).jql).toBe(savedJql);
+            expect((call[1] as any).nextPageToken).toBe('some-page-token');
         });
 
         it('should produce correct document structure', async () => {

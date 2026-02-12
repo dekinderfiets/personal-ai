@@ -152,7 +152,7 @@ describe('SlackConnector', () => {
             expect(result.documents.length).toBe(2);
             expect(result.documents[0].metadata.type).toBe('message');
             expect(result.documents[1].metadata.type).toBe('thread_reply');
-            expect(result.documents[1].metadata.parentId).toBe('slack_C1_1700000000.000100');
+            expect((result.documents[1].metadata as any).parentId).toBe('slack_C1_1700000000.000100');
         });
 
         it('should compute reaction metadata correctly', async () => {
@@ -172,9 +172,9 @@ describe('SlackConnector', () => {
             const result = await connector.fetch(null, {});
 
             const doc = result.documents[0];
-            expect(doc.metadata.reactionCount).toBe(19);
+            expect((doc.metadata as any).reactionCount).toBe(19);
             // Top 3 sorted by count: smile(10), thumbsup(5), heart(3)
-            expect(doc.metadata.topReactions).toEqual(['smile', 'thumbsup', 'heart']);
+            expect((doc.metadata as any).topReactions).toEqual(['smile', 'thumbsup', 'heart']);
         });
 
         it('should set reactionCount=0 and topReactions=[] when no reactions', async () => {
@@ -187,8 +187,8 @@ describe('SlackConnector', () => {
 
             const result = await connector.fetch(null, {});
 
-            expect(result.documents[0].metadata.reactionCount).toBe(0);
-            expect(result.documents[0].metadata.topReactions).toEqual([]);
+            expect((result.documents[0].metadata as any).reactionCount).toBe(0);
+            expect((result.documents[0].metadata as any).topReactions).toEqual([]);
         });
 
         it('should replace mentions in text with user names', async () => {
@@ -228,7 +228,7 @@ describe('SlackConnector', () => {
             });
 
             const result = await connector.fetch(null, {});
-            expect(result.documents[0].metadata.mentionedUsers).toEqual(['Alice']);
+            expect((result.documents[0].metadata as any).mentionedUsers).toEqual(['Alice']);
         });
 
         it('should handle channel pagination (channelIdx advancing)', async () => {
