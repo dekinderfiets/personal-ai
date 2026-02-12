@@ -88,6 +88,11 @@ const Explore: React.FC = () => {
 
   const handleDirection = (direction: Direction) => {
     if (!current) return;
+    // Parent navigation should actually navigate to the parent document
+    if (direction === 'parent' && navState.parentId) {
+      navigateTo(navState.parentId, 'children');
+      return;
+    }
     fetchNavigation(current.id, direction, scope);
   };
 
@@ -108,6 +113,119 @@ const Explore: React.FC = () => {
     const m = item.metadata;
     const d = (m.updatedAt || m.date || m.timestamp || m.createdAt || '') as string;
     return d ? new Date(d).toLocaleString() : '';
+  };
+
+  /**
+   * Build the middle breadcrumb segments for the current document.
+   * Each connector has different hierarchy structures, so we need per-source logic.
+   * Clickable segments navigate to the parent document when possible.
+   */
+  const buildBreadcrumbMiddle = (
+    item: SearchResult,
+    nav: NavigationState,
+    onNavigate: (docId: string, direction?: Direction) => void,
+  ): React.ReactNode[] => {
+    const m = item.metadata;
+    const crumbs: React.ReactNode[] = [];
+
+    const clickableChip = (label: string, docId: string, key: string) => (
+      <Chip
+        key={key}
+        label={label}
+        size="small"
+        variant="outlined"
+        clickable
+        onClick={() => onNavigate(docId, 'children')}
+        sx={{ cursor: 'pointer' }}
+      />
+    );
+
+    const staticChip = (label: string, key: string) => (
+      <Chip key={key} label={label} size="small" variant="outlined" />
+    );
+
+    switch (item.source) {
+      case 'jira': {
+        // Jira: Project > [Parent Issue] > current
+        if (m.project) crumbs.push(staticChip(String(m.project), 'project'));
+        // If this is a comment, show the parent issue as clickable
+        if (m.type === 'comment' && nav.parentId) {
+          // Extract issue key from parentId (it IS the issue key for Jira)
+          const issueKey = String(nav.parentId);
+          crumbs.push(clickableChip(issueKey, nav.parentId, 'parent-issue'));
+        }
+        break;
+      }
+      case 'slack': {
+        // Slack: #channel > [thread] > current
+        if (m.channel) crumbs.push(staticChip(`#${String(m.channel)}`, 'channel'));
+        // If this is a thread reply, show the parent message as clickable
+        if (m.type === 'thread_reply' && nav.parentId) {
+          crumbs.push(clickableChip('Thread', nav.parentId, 'parent-thread'));
+        }
+        break;
+      }
+      case 'gmail': {
+        // Gmail: Thread > current
+        if (m.threadId) crumbs.push(staticChip(`Thread ${String(m.threadId).slice(0, 8)}...`, 'thread'));
+        break;
+      }
+      case 'drive': {
+        // Drive: path segments as breadcrumbs
+        if (m.path) {
+          const pathStr = String(m.path);
+          const segments = pathStr.split('/').filter(Boolean);
+          // Show folder segments (all except the last which is the file name)
+          const folderSegments = segments.slice(0, -1);
+          for (let i = 0; i < folderSegments.length; i++) {
+            crumbs.push(staticChip(folderSegments[i], `path-${i}`));
+          }
+        }
+        break;
+      }
+      case 'confluence': {
+        // Confluence: Space > [ancestors] > [parent page] > current
+        if (m.space) {
+          const spaceLabel = m.spaceName ? String(m.spaceName) : String(m.space);
+          crumbs.push(staticChip(spaceLabel, 'space'));
+        }
+        // Show ancestors if available (they're page titles in order)
+        if (m.ancestors) {
+          try {
+            const ancestors = typeof m.ancestors === 'string' ? JSON.parse(m.ancestors) : m.ancestors;
+            if (Array.isArray(ancestors)) {
+              for (let i = 0; i < ancestors.length; i++) {
+                crumbs.push(staticChip(String(ancestors[i]), `ancestor-${i}`));
+              }
+            }
+          } catch {
+            // ancestors might not be parseable; skip
+          }
+        }
+        // If this is a comment, show the parent page as clickable
+        if (m.type === 'comment' && nav.parentId) {
+          crumbs.push(clickableChip('Parent Page', nav.parentId, 'parent-page'));
+        }
+        break;
+      }
+      case 'calendar': {
+        // Calendar: just show "Calendar" context
+        crumbs.push(staticChip('Events', 'calendar'));
+        break;
+      }
+      case 'github': {
+        // GitHub: repo > [PR/Issue] > current
+        if (m.repo) crumbs.push(staticChip(String(m.repo), 'repo'));
+        // If this is a review or comment, show the parent PR as clickable
+        if ((m.type === 'pr_review' || m.type === 'pr_comment') && nav.parentId) {
+          const prLabel = m.number ? `PR #${m.number}` : 'Pull Request';
+          crumbs.push(clickableChip(prLabel, nav.parentId, 'parent-pr'));
+        }
+        break;
+      }
+    }
+
+    return crumbs;
   };
 
   // -- Empty state: no documentId --
@@ -335,18 +453,7 @@ const Explore: React.FC = () => {
                   fontWeight: 600,
                 }}
               />
-              {current.metadata.project ? (
-                <Chip label={String(current.metadata.project)} size="small" variant="outlined" />
-              ) : null}
-              {current.metadata.channel ? (
-                <Chip label={`#${String(current.metadata.channel)}`} size="small" variant="outlined" />
-              ) : null}
-              {current.metadata.space ? (
-                <Chip label={String(current.metadata.space)} size="small" variant="outlined" />
-              ) : null}
-              {current.metadata.repo ? (
-                <Chip label={String(current.metadata.repo)} size="small" variant="outlined" />
-              ) : null}
+              {buildBreadcrumbMiddle(current, navState, navigateTo)}
               <Typography variant="body2" color="text.primary" fontWeight={500}>
                 {getTitle(current)}
               </Typography>

@@ -98,6 +98,9 @@ export class DriveConnector extends BaseConnector {
                         if (!content) return null;
 
                         const path = await this.getFilePath(token, file);
+                        // Extract parent folder path for sibling navigation
+                        const lastSlash = path.lastIndexOf('/');
+                        const folderPath = lastSlash > 0 ? path.substring(0, lastSlash) : '/';
                         return {
                             id: `drive_${file.id}`,
                             source: 'drive',
@@ -110,6 +113,7 @@ export class DriveConnector extends BaseConnector {
                                 name: file.name,
                                 mimeType: file.mimeType,
                                 path,
+                                folderPath,
                                 owner: file.owners?.[0]?.displayName || 'Unknown',
                                 createdAt: file.createdTime,
                                 modifiedAt: file.modifiedTime,
