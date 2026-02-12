@@ -14,6 +14,12 @@ export class IndexController {
         private settingsService: SettingsService,
     ) { }
 
+    @Post('migrate-timestamps')
+    async migrateTimestamps(): Promise<{ message: string; migrated: Record<string, number> }> {
+        const migrated = await this.indexingService.migrateTimestamps();
+        return { message: 'Timestamp migration complete', migrated };
+    }
+
     @Post('all')
     async triggerAllIndexing(@Body() request: IndexRequest = {}): Promise<{
         started: DataSource[];
@@ -113,12 +119,6 @@ export class IndexController {
     }
 
     // --- Discovery Endpoints ---
-
-    @Post('migrate-timestamps')
-    async migrateTimestamps(): Promise<{ message: string; migrated: Record<string, number> }> {
-        const migrated = await this.indexingService.migrateTimestamps();
-        return { message: 'Timestamp migration complete', migrated };
-    }
 
     @Get('discovery/jira/projects')
     async discoverJiraProjects(): Promise<any[]> {
