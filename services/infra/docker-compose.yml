@@ -30,15 +30,13 @@ services:
   temporal:
     image: temporalio/auto-setup:latest
     container_name: personal-ai_temporal
+    env_file: services/infra/.env
     depends_on:
       - postgres
     environment:
       DB: postgres12
       DB_PORT: 5432
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PWD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_SEEDS: postgres
-      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
     ports:
       - "127.0.0.1:7233:7233"
     restart: unless-stopped
