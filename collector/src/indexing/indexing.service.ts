@@ -224,9 +224,21 @@ export class IndexingService {
     }
 
     async updateCursorAfterBatch(source: DataSource, result: ConnectorResult, configKey?: string): Promise<Cursor> {
+        const hasSyncToken = !!result.newCursor?.syncToken;
+
+        // When pagination is in progress (syncToken present), preserve the
+        // original lastSync so the JQL stays identical across pages.  Jira's
+        // nextPageToken embeds the JQL and rejects requests whose query
+        // differs from the one that created the token.
+        const existingCursor = hasSyncToken
+            ? await this.cursorService.getCursor(source)
+            : null;
+
         const newCursor: Cursor = {
             source,
-            lastSync: result.batchLastSync || new Date().toISOString(),
+            lastSync: hasSyncToken
+                ? (existingCursor?.lastSync || result.batchLastSync || new Date().toISOString())
+                : (result.batchLastSync || new Date().toISOString()),
             syncToken: result.newCursor?.syncToken,
             metadata: {
                 ...result.newCursor?.metadata,
@@ -433,6 +445,20 @@ export class IndexingService {
     async getGitHubRepositories(): Promise<any[]> {
         const connector = this.getConnector('github') as GitHubConnector;
         return connector.listRepositories();
+    }
+
+    async migrateTimestamps(): Promise<Record<string, number>> {
+        const sources: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar', 'github'];
+        const result: Record<string, number> = {};
+        for (const source of sources) {
+            try {
+                result[source] = await this.chromaService.migrateTimestamps(source);
+            } catch (err) {
+                this.logger.warn(`Timestamp migration failed for ${source}: ${(err as Error).message}`);
+                result[source] = -1;
+            }
+        }
+        return result;
     }
 
     // -------------------------------------------------------------------------

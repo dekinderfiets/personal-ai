@@ -114,6 +114,12 @@ export class IndexController {
 
     // --- Discovery Endpoints ---
 
+    @Post('migrate-timestamps')
+    async migrateTimestamps(): Promise<{ message: string; migrated: Record<string, number> }> {
+        const migrated = await this.indexingService.migrateTimestamps();
+        return { message: 'Timestamp migration complete', migrated };
+    }
+
     @Get('discovery/jira/projects')
     async discoverJiraProjects(): Promise<any[]> {
         return this.indexingService.getJiraProjects();

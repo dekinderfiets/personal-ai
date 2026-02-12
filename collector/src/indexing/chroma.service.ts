@@ -5,6 +5,7 @@ import type { Where, Metadata } from 'chromadb';
 
 type IncludeField = 'documents' | 'metadatas' | 'distances' | 'embeddings' | 'uris';
 import axios from 'axios';
+import { createHash } from 'crypto';
 import { DataSource, IndexDocument, SearchResult, NavigationResult } from '../types';
 
 const CHUNK_SIZE = 4000;
@@ -143,6 +144,11 @@ export class ChromaService implements OnModuleInit {
             if (value === null || value === undefined) continue;
             if (typeof value === 'string') {
                 flat[key] = this.sanitizeText(value);
+                // Store numeric timestamp for date fields so ChromaDB $gte/$lte work
+                if (key === 'createdAt' || key === 'updatedAt') {
+                    const ts = new Date(value).getTime();
+                    if (!isNaN(ts)) flat[`${key}Ts`] = ts;
+                }
             } else if (typeof value === 'number' || typeof value === 'boolean') {
                 flat[key] = value;
             } else if (Array.isArray(value)) {
@@ -154,14 +160,17 @@ export class ChromaService implements OnModuleInit {
         return flat;
     }
 
+    private contentHash(text: string): string {
+        return createHash('sha256').update(text).digest('hex').slice(0, 16);
+    }
+
     async upsertDocuments(source: DataSource, documents: IndexDocument[]): Promise<void> {
         if (documents.length === 0) return;
 
         const collection = await this.getOrCreateCollection(source);
 
-        const ids: string[] = [];
-        const contents: string[] = [];
-        const metadatas: Metadata[] = [];
+        // Prepare all items (chunked or not)
+        const items: { id: string; content: string; metadata: Metadata }[] = [];
 
         for (const doc of documents) {
             const sanitizedContent = this.sanitizeText(doc.content);
@@ -173,39 +182,89 @@ export class ChromaService implements OnModuleInit {
                 : this.chunkContent(sanitizedContent);
 
             if (chunks.length === 1) {
-                ids.push(doc.id);
-                contents.push(preChunked ? chunks[0] : sanitizedContent);
-                metadatas.push(this.flattenMetadata(doc.metadata));
+                const content = preChunked ? chunks[0] : sanitizedContent;
+                items.push({
+                    id: doc.id,
+                    content,
+                    metadata: { ...this.flattenMetadata(doc.metadata), _contentHash: this.contentHash(content) },
+                });
             } else {
                 for (let i = 0; i < chunks.length; i++) {
-                    const chunkId = `${doc.id}_chunk_${i}`;
-                    ids.push(chunkId);
-                    contents.push(chunks[i]);
-                    metadatas.push(this.flattenMetadata({
-                        ...doc.metadata,
-                        chunkIndex: i,
-                        totalChunks: chunks.length,
-                        parentDocId: doc.id,
-                    }));
+                    items.push({
+                        id: `${doc.id}_chunk_${i}`,
+                        content: chunks[i],
+                        metadata: {
+                            ...this.flattenMetadata({
+                                ...doc.metadata,
+                                chunkIndex: i,
+                                totalChunks: chunks.length,
+                                parentDocId: doc.id,
+                            }),
+                            _contentHash: this.contentHash(chunks[i]),
+                        },
+                    });
                 }
             }
         }
 
-        // Upsert in batches of 100
+        // Fetch existing hashes to detect what actually changed
         const batchSize = 100;
-        for (let i = 0; i < ids.length; i += batchSize) {
-            const batchIds = ids.slice(i, i + batchSize);
-            const batchContents = contents.slice(i, i + batchSize);
-            const batchMetadatas = metadatas.slice(i, i + batchSize);
+        const existingHashes = new Map<string, string>();
+        for (let i = 0; i < items.length; i += batchSize) {
+            const batchIds = items.slice(i, i + batchSize).map(it => it.id);
+            try {
+                const existing = await collection.get({
+                    ids: batchIds,
+                    include: ['metadatas'] as IncludeField[],
+                });
+                for (let j = 0; j < existing.ids.length; j++) {
+                    const hash = (existing.metadatas?.[j] as Record<string, unknown>)?._contentHash;
+                    if (typeof hash === 'string') existingHashes.set(existing.ids[j], hash);
+                }
+            } catch {
+                // Collection may be empty or IDs don't exist yet — all will be full upserts
+            }
+        }
 
+        // Split into content-changed (full upsert) vs metadata-only (update without re-embedding)
+        const upsertItems: typeof items = [];
+        const updateItems: typeof items = [];
+
+        for (const item of items) {
+            const oldHash = existingHashes.get(item.id);
+            if (oldHash && oldHash === item.metadata._contentHash) {
+                updateItems.push(item);
+            } else {
+                upsertItems.push(item);
+            }
+        }
+
+        // Full upsert — generates new embeddings
+        for (let i = 0; i < upsertItems.length; i += batchSize) {
+            const batch = upsertItems.slice(i, i + batchSize);
             await collection.upsert({
-                ids: batchIds,
-                documents: batchContents,
-                metadatas: batchMetadatas,
+                ids: batch.map(it => it.id),
+                documents: batch.map(it => it.content),
+                metadatas: batch.map(it => it.metadata),
             });
         }
 
-        this.logger.debug(`Upserted ${ids.length} items (from ${documents.length} documents) to ${source}`);
+        // Metadata-only update — no embeddings regenerated
+        for (let i = 0; i < updateItems.length; i += batchSize) {
+            const batch = updateItems.slice(i, i + batchSize);
+            await collection.update({
+                ids: batch.map(it => it.id),
+                metadatas: batch.map(it => it.metadata),
+            });
+        }
+
+        if (updateItems.length > 0) {
+            this.logger.debug(
+                `${source}: ${upsertItems.length} embedded, ${updateItems.length} metadata-only (content unchanged)`,
+            );
+        } else {
+            this.logger.debug(`Upserted ${items.length} items (from ${documents.length} documents) to ${source}`);
+        }
     }
 
     async search(
@@ -537,10 +596,13 @@ export class ChromaService implements OnModuleInit {
         }
 
         if (startDate) {
-            conditions.push({ createdAt: { $gte: startDate } });
+            const ts = new Date(startDate).getTime();
+            if (!isNaN(ts)) conditions.push({ createdAtTs: { $gte: ts } });
         }
         if (endDate) {
-            conditions.push({ createdAt: { $lte: endDate } });
+            // Use end of day so the selected date is inclusive
+            const ts = new Date(endDate + 'T23:59:59.999Z').getTime();
+            if (!isNaN(ts)) conditions.push({ createdAtTs: { $lte: ts } });
         }
 
         if (conditions.length === 0) return undefined;
@@ -569,6 +631,65 @@ export class ChromaService implements OnModuleInit {
         } catch {
             // Ignore if no chunks found
         }
+    }
+
+    /**
+     * Back-fill createdAtTs/updatedAtTs numeric timestamps on existing documents.
+     * Uses collection.update() with metadatas only — no embeddings are regenerated.
+     */
+    async migrateTimestamps(source: DataSource): Promise<number> {
+        const collection = await this.getOrCreateCollection(source);
+        let migrated = 0;
+        let offset = 0;
+        const batchSize = 100;
+
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+            const batch = await collection.get({
+                limit: batchSize,
+                offset,
+                include: ['metadatas'] as IncludeField[],
+            });
+
+            if (batch.ids.length === 0) break;
+
+            const idsToUpdate: string[] = [];
+            const metasToUpdate: Metadata[] = [];
+
+            for (let i = 0; i < batch.ids.length; i++) {
+                const meta = (batch.metadatas?.[i] ?? {}) as Record<string, unknown>;
+
+                // Skip if already migrated
+                if (typeof meta.createdAtTs === 'number') continue;
+
+                const createdAt = meta.createdAt as string | undefined;
+                if (!createdAt) continue;
+
+                const ts = new Date(createdAt).getTime();
+                if (isNaN(ts)) continue;
+
+                const patch: Metadata = { createdAtTs: ts };
+                const updatedAt = meta.updatedAt as string | undefined;
+                if (updatedAt) {
+                    const uTs = new Date(updatedAt).getTime();
+                    if (!isNaN(uTs)) patch.updatedAtTs = uTs;
+                }
+
+                idsToUpdate.push(batch.ids[i]);
+                metasToUpdate.push(patch);
+            }
+
+            if (idsToUpdate.length > 0) {
+                await collection.update({ ids: idsToUpdate, metadatas: metasToUpdate });
+                migrated += idsToUpdate.length;
+            }
+
+            offset += batch.ids.length;
+            if (batch.ids.length < batchSize) break;
+        }
+
+        this.logger.log(`Migrated ${migrated} documents in ${source} with numeric timestamps`);
+        return migrated;
     }
 
     async deleteCollection(source: DataSource): Promise<void> {
