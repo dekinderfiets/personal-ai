@@ -20,7 +20,8 @@
         "esModuleInterop": true,
         "resolveJsonModule": true,
         "types": [
-            "node"
+            "node",
+            "jest"
         ]
     },
     "include": [
