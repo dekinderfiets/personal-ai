@@ -15,7 +15,7 @@ export class HealthController {
     @Get()
     async health() {
         let redisStatus = 'down';
-        let chromaStatus = 'down';
+        let elasticsearchStatus = 'down';
         let temporalStatus = 'down';
 
         try {
@@ -24,9 +24,9 @@ export class HealthController {
         } catch (e) {}
 
         try {
-            const chromaUrl = this.configService.get<string>('chroma.url');
-            await axios.get(`${chromaUrl}/api/v2/heartbeat`);
-            chromaStatus = 'up';
+            const esUrl = this.configService.get<string>('elasticsearch.url');
+            await axios.get(`${esUrl}/_cluster/health`);
+            elasticsearchStatus = 'up';
         } catch (e) {}
 
         try {
@@ -34,7 +34,7 @@ export class HealthController {
             temporalStatus = healthy ? 'up' : 'down';
         } catch (e) {}
 
-        const allUp = redisStatus === 'up' && chromaStatus === 'up' && temporalStatus === 'up';
+        const allUp = redisStatus === 'up' && elasticsearchStatus === 'up' && temporalStatus === 'up';
 
         return {
             status: allUp ? 'ok' : 'partial',
@@ -42,7 +42,7 @@ export class HealthController {
             timestamp: new Date().toISOString(),
             dependencies: {
                 redis: redisStatus,
-                chroma: chromaStatus,
+                elasticsearch: elasticsearchStatus,
                 temporal: temporalStatus,
             }
         };

@@ -16,7 +16,6 @@ describe('IndexController', () => {
             resetCursor: jest.fn(),
             resetAll: jest.fn(),
             deleteDocument: jest.fn(),
-            migrateTimestamps: jest.fn(),
             getJiraProjects: jest.fn(),
             getSlackChannels: jest.fn(),
             getDriveFolders: jest.fn(),
@@ -88,19 +87,6 @@ describe('IndexController', () => {
 
             expect(result).toEqual(expected);
             expect(mockIndexingService.indexAll).toHaveBeenCalledWith({});
-        });
-    });
-
-    describe('migrateTimestamps', () => {
-        it('should return migration result', async () => {
-            mockIndexingService.migrateTimestamps.mockResolvedValue({ gmail: 5, slack: 3 });
-
-            const result = await controller.migrateTimestamps();
-
-            expect(result).toEqual({
-                message: 'Timestamp migration complete',
-                migrated: { gmail: 5, slack: 3 },
-            });
         });
     });
 

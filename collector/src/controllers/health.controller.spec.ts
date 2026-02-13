@@ -36,7 +36,7 @@ describe('HealthController', () => {
         expect(result.service).toBe('index-service');
         expect(result.dependencies).toEqual({
             redis: 'up',
-            chroma: 'up',
+            elasticsearch: 'up',
             temporal: 'up',
         });
         expect(result.timestamp).toBeDefined();
@@ -51,11 +51,11 @@ describe('HealthController', () => {
 
         expect(result.status).toBe('partial');
         expect(result.dependencies.redis).toBe('down');
-        expect(result.dependencies.chroma).toBe('up');
+        expect(result.dependencies.elasticsearch).toBe('up');
         expect(result.dependencies.temporal).toBe('up');
     });
 
-    it('should return partial when Chroma is down', async () => {
+    it('should return partial when Elasticsearch is down', async () => {
         mockCursorService.redis.ping.mockResolvedValue('PONG');
         (axios.get as jest.Mock).mockRejectedValue(new Error('connection refused'));
         mockTemporalClient.checkHealth.mockResolvedValue(true);
@@ -64,7 +64,7 @@ describe('HealthController', () => {
 
         expect(result.status).toBe('partial');
         expect(result.dependencies.redis).toBe('up');
-        expect(result.dependencies.chroma).toBe('down');
+        expect(result.dependencies.elasticsearch).toBe('down');
     });
 
     it('should return partial when Temporal is down', async () => {
@@ -88,7 +88,7 @@ describe('HealthController', () => {
         expect(result.status).toBe('partial');
         expect(result.dependencies).toEqual({
             redis: 'down',
-            chroma: 'down',
+            elasticsearch: 'down',
             temporal: 'down',
         });
     });

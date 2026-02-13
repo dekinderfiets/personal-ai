@@ -72,7 +72,7 @@ class EnvironmentVariables {
 
     @IsString()
     @IsOptional()
-    CHROMA_URL: string;
+    ELASTICSEARCH_URL: string;
 
     @IsString()
     @IsOptional()

@@ -1,5 +1,5 @@
 import { Controller, Post, Get, Param, Query, Body, UseGuards, HttpException, HttpStatus } from '@nestjs/common';
-import { ChromaService } from '../indexing/chroma.service';
+import { ElasticsearchService } from '../indexing/elasticsearch.service';
 import { IndexingService } from '../indexing/indexing.service';
 import { ApiKeyGuard } from '../auth/api-key.guard';
 import { DataSource, SearchRequest, SearchResult, NavigationResult, BulkDeleteRequest, BulkDeleteResponse, DocumentStats } from '../types';
@@ -10,13 +10,13 @@ const ALL_SOURCES: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluenc
 @UseGuards(ApiKeyGuard)
 export class SearchController {
     constructor(
-        private chromaService: ChromaService,
+        private elasticsearchService: ElasticsearchService,
         private indexingService: IndexingService,
     ) {}
 
     @Post()
     async search(@Body() body: SearchRequest): Promise<{ results: SearchResult[]; total: number }> {
-        return this.chromaService.search(body.query, {
+        return this.elasticsearchService.search(body.query, {
             sources: body.sources,
             searchType: body.searchType,
             limit: body.limit,
@@ -34,7 +34,7 @@ export class SearchController {
         @Query('scope') scope: 'chunk' | 'datapoint' | 'context' = 'datapoint',
         @Query('limit') limit?: string,
     ): Promise<NavigationResult> {
-        return this.chromaService.navigate(
+        return this.elasticsearchService.navigate(
             documentId,
             direction,
             scope,
@@ -49,7 +49,7 @@ export class SearchController {
         const counts = await Promise.all(
             ALL_SOURCES.map(async (source) => ({
                 source,
-                count: await this.chromaService.countDocuments(source),
+                count: await this.elasticsearchService.countDocuments(source),
             })),
         );
         return {
@@ -106,7 +106,7 @@ export class SearchController {
         // Query each source in parallel
         const sourceResults = await Promise.all(
             sources.map((source) =>
-                this.chromaService.listDocuments(source, { limit: limit + offset, offset: 0, where, startDate, endDate }),
+                this.elasticsearchService.listDocuments(source, { limit: limit + offset, offset: 0, where, startDate, endDate }),
             ),
         );
 
@@ -129,7 +129,7 @@ export class SearchController {
     @Get('documents/:id')
     async getDocument(@Param('id') id: string): Promise<SearchResult> {
         for (const source of ALL_SOURCES) {
-            const doc = await this.chromaService.getDocument(source, id);
+            const doc = await this.elasticsearchService.getDocument(source, id);
             if (doc) return doc;
         }
         throw new HttpException('Document not found', HttpStatus.NOT_FOUND);

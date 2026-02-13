@@ -39,11 +39,10 @@ function createMockFileSaverService() {
     };
 }
 
-function createMockChromaService() {
+function createMockElasticsearchService() {
     return {
         upsertDocuments: jest.fn().mockResolvedValue(undefined),
         deleteDocument: jest.fn().mockResolvedValue(undefined),
-        migrateTimestamps: jest.fn().mockResolvedValue(0),
     };
 }
 
@@ -87,7 +86,7 @@ function createService(configOverrides: Record<string, any> = {}) {
     const configService = createMockConfigService(configOverrides);
     const cursorService = createMockCursorService();
     const fileSaverService = createMockFileSaverService();
-    const chromaService = createMockChromaService();
+    const elasticsearchService = createMockElasticsearchService();
     const settingsService = createMockSettingsService();
     const analyticsService = createMockAnalyticsService();
     const temporalClient = createMockTemporalClient();
@@ -105,7 +104,7 @@ function createService(configOverrides: Record<string, any> = {}) {
         configService as any,
         cursorService as any,
         fileSaverService as any,
-        chromaService as any,
+        elasticsearchService as any,
         settingsService as any,
         analyticsService as any,
         temporalClient as any,
@@ -118,7 +117,7 @@ function createService(configOverrides: Record<string, any> = {}) {
         connectors.github as any,
     );
 
-    return { service, configService, cursorService, fileSaverService, chromaService, settingsService, analyticsService, temporalClient, connectors };
+    return { service, configService, cursorService, fileSaverService, elasticsearchService, settingsService, analyticsService, temporalClient, connectors };
 }
 
 // ---------------------------------------------------------------------------
@@ -876,7 +875,7 @@ describe('IndexingService', () => {
     // -----------------------------------------------------------------------
     describe('processIndexingBatch', () => {
         it('filters changed documents via hash comparison', async () => {
-            const { service, cursorService, chromaService, fileSaverService } = createService();
+            const { service, cursorService, elasticsearchService, fileSaverService } = createService();
             const docs = [
                 makeDoc('jira', 'J-1', 'content1', { title: 'Issue 1' }),
                 makeDoc('jira', 'J-2', 'content2', { title: 'Issue 2' }),
@@ -892,13 +891,13 @@ describe('IndexingService', () => {
 
             const count = await service.processIndexingBatch('jira', docs);
             expect(count).toBe(2);
-            expect(chromaService.upsertDocuments).toHaveBeenCalledTimes(1);
+            expect(elasticsearchService.upsertDocuments).toHaveBeenCalledTimes(1);
             expect(fileSaverService.saveDocuments).toHaveBeenCalledTimes(1);
             expect(cursorService.bulkSetDocumentHashes).toHaveBeenCalledTimes(1);
         });
 
         it('skips indexing when all documents are unchanged', async () => {
-            const { service, cursorService, chromaService } = createService();
+            const { service, cursorService, elasticsearchService } = createService();
 
             // We need to compute the actual hash to simulate "unchanged"
             const doc = makeDoc('jira', 'J-1', 'stable content', { title: 'Test' });
@@ -913,51 +912,51 @@ describe('IndexingService', () => {
 
             const count = await service.processIndexingBatch('jira', [doc]);
             expect(count).toBe(0);
-            expect(chromaService.upsertDocuments).not.toHaveBeenCalled();
+            expect(elasticsearchService.upsertDocuments).not.toHaveBeenCalled();
         });
 
         it('indexes all documents in force mode without hash check', async () => {
-            const { service, cursorService, chromaService } = createService();
+            const { service, cursorService, elasticsearchService } = createService();
             const docs = [makeDoc('jira', 'J-1', 'content', { title: 'Test' })];
 
             const count = await service.processIndexingBatch('jira', docs, true);
             expect(count).toBe(1);
             expect(cursorService.bulkGetDocumentHashes).not.toHaveBeenCalled();
-            expect(chromaService.upsertDocuments).toHaveBeenCalledWith('jira', docs);
+            expect(elasticsearchService.upsertDocuments).toHaveBeenCalledWith('jira', docs);
         });
 
-        it('retries on ChromaDB failure and succeeds', async () => {
-            const { service, cursorService, chromaService } = createService();
+        it('retries on Elasticsearch failure and succeeds', async () => {
+            const { service, cursorService, elasticsearchService } = createService();
             cursorService.bulkGetDocumentHashes.mockResolvedValue([null]);
-            chromaService.upsertDocuments
-                .mockRejectedValueOnce(new Error('ChromaDB down'))
+            elasticsearchService.upsertDocuments
+                .mockRejectedValueOnce(new Error('Elasticsearch down'))
                 .mockResolvedValue(undefined);
 
             const docs = [makeDoc('jira', 'J-1', 'content', { title: 'Test' })];
             const count = await service.processIndexingBatch('jira', docs);
             expect(count).toBe(1);
-            expect(chromaService.upsertDocuments).toHaveBeenCalledTimes(2);
+            expect(elasticsearchService.upsertDocuments).toHaveBeenCalledTimes(2);
         });
 
         it('throws after 3 failed retries', async () => {
-            const { service, cursorService, chromaService } = createService();
+            const { service, cursorService, elasticsearchService } = createService();
             cursorService.bulkGetDocumentHashes.mockResolvedValue([null]);
-            chromaService.upsertDocuments.mockRejectedValue(new Error('persistent failure'));
+            elasticsearchService.upsertDocuments.mockRejectedValue(new Error('persistent failure'));
 
             const docs = [makeDoc('jira', 'J-1', 'content', { title: 'Test' })];
             await expect(service.processIndexingBatch('jira', docs)).rejects.toThrow('persistent failure');
-            expect(chromaService.upsertDocuments).toHaveBeenCalledTimes(3);
+            expect(elasticsearchService.upsertDocuments).toHaveBeenCalledTimes(3);
         });
 
         it('returns 0 for empty documents array', async () => {
-            const { service, chromaService } = createService();
+            const { service, elasticsearchService } = createService();
             const count = await service.processIndexingBatch('jira', []);
             expect(count).toBe(0);
-            expect(chromaService.upsertDocuments).not.toHaveBeenCalled();
+            expect(elasticsearchService.upsertDocuments).not.toHaveBeenCalled();
         });
 
         it('handles fileSaverService failure gracefully (non-blocking)', async () => {
-            const { service, cursorService, chromaService, fileSaverService } = createService();
+            const { service, cursorService, elasticsearchService, fileSaverService } = createService();
             cursorService.bulkGetDocumentHashes.mockResolvedValue([null]);
             fileSaverService.saveDocuments.mockRejectedValue(new Error('disk full'));
 
@@ -965,7 +964,7 @@ describe('IndexingService', () => {
             // Should not throw even though file save fails
             const count = await service.processIndexingBatch('jira', docs);
             expect(count).toBe(1);
-            expect(chromaService.upsertDocuments).toHaveBeenCalledTimes(1);
+            expect(elasticsearchService.upsertDocuments).toHaveBeenCalledTimes(1);
         });
     });
 
@@ -1190,17 +1189,17 @@ describe('IndexingService', () => {
     // deleteDocument
     // -----------------------------------------------------------------------
     describe('deleteDocument', () => {
-        it('deletes from fileSaver, chroma, and removes hashes', async () => {
-            const { service, fileSaverService, chromaService, cursorService } = createService();
+        it('deletes from fileSaver, elasticsearch, and removes hashes', async () => {
+            const { service, fileSaverService, elasticsearchService, cursorService } = createService();
             await service.deleteDocument('slack', 'doc-123');
             expect(fileSaverService.deleteDocument).toHaveBeenCalledWith('slack', 'doc-123');
-            expect(chromaService.deleteDocument).toHaveBeenCalledWith('slack', 'doc-123');
+            expect(elasticsearchService.deleteDocument).toHaveBeenCalledWith('slack', 'doc-123');
             expect(cursorService.removeDocumentHashes).toHaveBeenCalledWith('slack', 'doc-123');
         });
 
-        it('continues even if ChromaDB delete fails', async () => {
-            const { service, chromaService, cursorService } = createService();
-            chromaService.deleteDocument.mockRejectedValue(new Error('chroma fail'));
+        it('continues even if Elasticsearch delete fails', async () => {
+            const { service, elasticsearchService, cursorService } = createService();
+            elasticsearchService.deleteDocument.mockRejectedValue(new Error('es fail'));
             await service.deleteDocument('slack', 'doc-123');
             // Should not throw, and should still remove hashes
             expect(cursorService.removeDocumentHashes).toHaveBeenCalledWith('slack', 'doc-123');

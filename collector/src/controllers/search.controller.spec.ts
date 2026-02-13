@@ -2,18 +2,18 @@ import { SearchController } from './search.controller';
 
 describe('SearchController', () => {
     let controller: SearchController;
-    let mockChromaService: any;
+    let mockElasticsearchService: any;
 
     beforeEach(() => {
-        mockChromaService = {
+        mockElasticsearchService = {
             search: jest.fn(),
             navigate: jest.fn(),
         };
-        controller = new SearchController(mockChromaService, {} as any);
+        controller = new SearchController(mockElasticsearchService, {} as any);
     });
 
     describe('search', () => {
-        it('should delegate all body params to chromaService.search', async () => {
+        it('should delegate all body params to elasticsearchService.search', async () => {
             const body = {
                 query: 'test query',
                 sources: ['gmail', 'slack'] as any,
@@ -25,12 +25,12 @@ describe('SearchController', () => {
                 endDate: '2024-12-31',
             };
             const expected = { results: [], total: 0 };
-            mockChromaService.search.mockResolvedValue(expected);
+            mockElasticsearchService.search.mockResolvedValue(expected);
 
             const result = await controller.search(body);
 
             expect(result).toEqual(expected);
-            expect(mockChromaService.search).toHaveBeenCalledWith('test query', {
+            expect(mockElasticsearchService.search).toHaveBeenCalledWith('test query', {
                 sources: ['gmail', 'slack'],
                 searchType: 'hybrid',
                 limit: 20,
@@ -43,11 +43,11 @@ describe('SearchController', () => {
 
         it('should pass undefined for optional params not provided', async () => {
             const body = { query: 'simple' } as any;
-            mockChromaService.search.mockResolvedValue({ results: [], total: 0 });
+            mockElasticsearchService.search.mockResolvedValue({ results: [], total: 0 });
 
             await controller.search(body);
 
-            expect(mockChromaService.search).toHaveBeenCalledWith('simple', {
+            expect(mockElasticsearchService.search).toHaveBeenCalledWith('simple', {
                 sources: undefined,
                 searchType: undefined,
                 limit: undefined,
@@ -62,28 +62,28 @@ describe('SearchController', () => {
     describe('navigate', () => {
         it('should delegate with default values', async () => {
             const expected = { current: null, related: [], navigation: {} };
-            mockChromaService.navigate.mockResolvedValue(expected);
+            mockElasticsearchService.navigate.mockResolvedValue(expected);
 
             const result = await controller.navigate('doc-1', 'next', 'datapoint', undefined);
 
             expect(result).toEqual(expected);
-            expect(mockChromaService.navigate).toHaveBeenCalledWith('doc-1', 'next', 'datapoint', 10);
+            expect(mockElasticsearchService.navigate).toHaveBeenCalledWith('doc-1', 'next', 'datapoint', 10);
         });
 
         it('should parse limit string to integer', async () => {
-            mockChromaService.navigate.mockResolvedValue({ current: null, related: [], navigation: {} });
+            mockElasticsearchService.navigate.mockResolvedValue({ current: null, related: [], navigation: {} });
 
             await controller.navigate('doc-1', 'prev', 'chunk', '5');
 
-            expect(mockChromaService.navigate).toHaveBeenCalledWith('doc-1', 'prev', 'chunk', 5);
+            expect(mockElasticsearchService.navigate).toHaveBeenCalledWith('doc-1', 'prev', 'chunk', 5);
         });
 
         it('should pass direction and scope parameters correctly', async () => {
-            mockChromaService.navigate.mockResolvedValue({ current: null, related: [], navigation: {} });
+            mockElasticsearchService.navigate.mockResolvedValue({ current: null, related: [], navigation: {} });
 
             await controller.navigate('doc-1', 'siblings', 'context', '25');
 
-            expect(mockChromaService.navigate).toHaveBeenCalledWith('doc-1', 'siblings', 'context', 25);
+            expect(mockElasticsearchService.navigate).toHaveBeenCalledWith('doc-1', 'siblings', 'context', 25);
         });
     });
 });

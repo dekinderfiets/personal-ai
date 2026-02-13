@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import * as CryptoJS from 'crypto-js';
 import { CursorService } from './cursor.service';
 import { FileSaverService } from './file-saver.service';
-import { ChromaService } from './chroma.service';
+import { ElasticsearchService } from './elasticsearch.service';
 import { JiraConnector } from '../connectors/jira.connector';
 import { SlackConnector } from '../connectors/slack.connector';
 import { GmailConnector } from '../connectors/gmail.connector';
@@ -27,7 +27,7 @@ export class IndexingService {
         private configService: ConfigService,
         private cursorService: CursorService,
         private fileSaverService: FileSaverService,
-        private chromaService: ChromaService,
+        private elasticsearchService: ElasticsearchService,
         private settingsService: SettingsService,
         private analyticsService: AnalyticsService,
         private temporalClient: TemporalClientService,
@@ -201,9 +201,9 @@ export class IndexingService {
                         this.logger.warn(`File save failed for ${source} (non-fatal): ${err.message}`);
                     });
 
-                    // ChromaDB upsert must succeed before we update hashes.
+                    // Elasticsearch upsert must succeed before we update hashes.
                     // If it fails, hashes stay stale so documents are retried on next sync.
-                    await this.chromaService.upsertDocuments(source, documentsToIndex);
+                    await this.elasticsearchService.upsertDocuments(source, documentsToIndex);
 
                     const newHashes: Record<string, string> = {};
                     documentsToIndex.forEach(doc => {
@@ -399,8 +399,8 @@ export class IndexingService {
     async deleteDocument(source: DataSource, documentId: string): Promise<void> {
         await Promise.all([
             this.fileSaverService.deleteDocument(source, documentId),
-            this.chromaService.deleteDocument(source, documentId).catch(err => {
-                this.logger.warn(`ChromaDB delete failed (non-fatal): ${err.message}`);
+            this.elasticsearchService.deleteDocument(source, documentId).catch(err => {
+                this.logger.warn(`Elasticsearch delete failed (non-fatal): ${err.message}`);
             }),
         ]);
         await this.cursorService.removeDocumentHashes(source, documentId);
@@ -445,20 +445,6 @@ export class IndexingService {
     async getGitHubRepositories(): Promise<any[]> {
         const connector = this.getConnector('github') as GitHubConnector;
         return connector.listRepositories();
-    }
-
-    async migrateTimestamps(): Promise<Record<string, number>> {
-        const sources: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar', 'github'];
-        const result: Record<string, number> = {};
-        for (const source of sources) {
-            try {
-                result[source] = await this.chromaService.migrateTimestamps(source);
-            } catch (err) {
-                this.logger.warn(`Timestamp migration failed for ${source}: ${(err as Error).message}`);
-                result[source] = -1;
-            }
-        }
-        return result;
     }
 
     // -------------------------------------------------------------------------

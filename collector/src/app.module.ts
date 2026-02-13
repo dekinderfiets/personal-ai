@@ -13,7 +13,7 @@ import { AnalyticsController } from './controllers/analytics.controller';
 import { WorkflowsController } from './controllers/workflows.controller';
 import { CursorService } from './indexing/cursor.service';
 import { IndexingService } from './indexing/indexing.service';
-import { ChromaService } from './indexing/chroma.service';
+import { ElasticsearchService } from './indexing/elasticsearch.service';
 import { JiraConnector } from './connectors/jira.connector';
 import { SlackConnector } from './connectors/slack.connector';
 import { GmailConnector } from './connectors/gmail.connector';
@@ -34,7 +34,7 @@ import {
     googleConfig,
     confluenceConfig,
     githubConfig,
-    chromaConfig,
+    elasticsearchConfig,
     temporalConfig,
     openaiConfig,
     cohereConfig,
@@ -58,7 +58,7 @@ import { FileProcessorService } from './indexing/file-processor.service';
                 googleConfig,
                 confluenceConfig,
                 githubConfig,
-                chromaConfig,
+                elasticsearchConfig,
                 temporalConfig,
                 openaiConfig,
                 cohereConfig,
@@ -77,7 +77,7 @@ import { FileProcessorService } from './indexing/file-processor.service';
         CursorService,
         SettingsService,
         FileSaverService,
-        ChromaService,
+        ElasticsearchService,
         ChunkingService,
         FileProcessorService,
         IndexingService,
