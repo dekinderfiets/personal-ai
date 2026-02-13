@@ -4,13 +4,7 @@ import axios from 'axios';
 import { BaseConnector } from './base.connector';
 import { Cursor, IndexRequest, ConnectorResult, IndexDocument, DriveDocument, DataSource } from '../types';
 import { GoogleAuthService } from './google-auth.service';
-import { exec } from 'child_process';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
+import { FileProcessorService } from '../indexing/file-processor.service';
 
 
 interface DriveFile {
@@ -34,6 +28,7 @@ export class DriveConnector extends BaseConnector {
     constructor(
         private configService: ConfigService,
         private googleAuthService: GoogleAuthService,
+        private fileProcessorService: FileProcessorService,
     ) {
         super();
     }
@@ -97,17 +92,17 @@ export class DriveConnector extends BaseConnector {
 
                 const results = await Promise.all(batch.map(async (file) => {
                     try {
-                        const content = await this.getFileContent(token, file);
-                        if (!content) return null;
+                        const fileResult = await this.getFileContent(token, file);
+                        if (!fileResult) return null;
 
                         const path = await this.getFilePath(token, file);
                         // Extract parent folder path for sibling navigation
                         const lastSlash = path.lastIndexOf('/');
                         const folderPath = lastSlash > 0 ? path.substring(0, lastSlash) : '/';
-                        return {
+                        const doc: DriveDocument = {
                             id: `drive_${file.id}`,
                             source: 'drive',
-                            content: `File: ${file.name}\nPath: ${path}\n\n${content}`,
+                            content: `File: ${file.name}\nPath: ${path}\n\n${fileResult.content}`,
                             metadata: {
                                 id: file.id,
                                 source: 'drive',
@@ -123,6 +118,10 @@ export class DriveConnector extends BaseConnector {
                                 url: file.webViewLink,
                             },
                         };
+                        if (fileResult.preChunked) {
+                            doc.preChunked = fileResult.preChunked;
+                        }
+                        return doc;
                     } catch (err) {
                         this.logger.error(`Error processing file ${file.name}: ${err.message}`);
                         return null;
@@ -180,145 +179,58 @@ export class DriveConnector extends BaseConnector {
         }
     }
 
-    private async getFileContent(token: string, file: DriveFile): Promise<string | null> {
-        // Skip unsupported binary types
-        const unsupportedTypes = [
-            'application/zip',
-            'application/x-zip-compressed',
-            'application/x-compress',
-            'application/x-compressed',
-            'application/octet-stream',
-            'application/x-tar',
-            'application/x-gzip',
-            'application/x-bzip2',
-            'application/x-7z-compressed',
-            'image/',
-            'video/',
-            'audio/',
-        ];
-
-        if (unsupportedTypes.some(type => file.mimeType.startsWith(type))) {
-            this.logger.debug(`Skipping unsupported binary file: ${file.name} (${file.mimeType})`);
-            return null;
-        }
-
-        this.logger.debug(`Fetching content for ${file.name} (${file.mimeType})`);
-        const isPdf = file.mimeType === 'application/pdf';
+    private async getFileContent(token: string, file: DriveFile): Promise<{ content: string; preChunked?: { chunks: string[] } } | null> {
         const isGoogleDoc = file.mimeType === 'application/vnd.google-apps.document';
         const isGoogleSheet = file.mimeType === 'application/vnd.google-apps.spreadsheet';
         const isGoogleSlide = file.mimeType === 'application/vnd.google-apps.presentation';
         const isGoogleApp = file.mimeType.startsWith('application/vnd.google-apps');
 
-        const isDocx = file.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-        const isXlsx = file.mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-        const isPptx = file.mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-
         let url: string;
         let responseType: 'text' | 'arraybuffer' = 'text';
+        let effectiveMimeType = file.mimeType;
 
         if (isGoogleDoc) {
             url = `https://www.googleapis.com/drive/v3/files/${file.id}/export?mimeType=text/plain`;
+            effectiveMimeType = 'text/plain';
         } else if (isGoogleSheet) {
             url = `https://www.googleapis.com/drive/v3/files/${file.id}/export?mimeType=text/csv`;
+            effectiveMimeType = 'text/csv';
         } else if (isGoogleSlide) {
             url = `https://www.googleapis.com/drive/v3/files/${file.id}/export?mimeType=application/pdf`;
             responseType = 'arraybuffer';
+            effectiveMimeType = 'application/pdf';
         } else if (isGoogleApp) {
-            // Unhandled google app type, skip for now to avoid 400 errors
             this.logger.warn(`Skipping unsupported Google App type: ${file.mimeType} (${file.name})`);
             return null;
         } else {
             url = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
-            if (isPdf || isDocx || isXlsx || isPptx) {
-                responseType = 'arraybuffer';
-            }
+            const needsBinary = [
+                'application/pdf',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            ].includes(file.mimeType);
+            if (needsBinary) responseType = 'arraybuffer';
         }
 
         try {
             const response = await axios.get(url, {
                 headers: { 'Authorization': `Bearer ${token}` },
                 responseType,
-                maxContentLength: 20 * 1024 * 1024, // 20MB limit
+                maxContentLength: 20 * 1024 * 1024,
             });
 
-            if (isPdf || isGoogleSlide) {
-                return await this.extractTextFromPdf(Buffer.from(response.data), file.name);
-            }
+            const rawContent = responseType === 'arraybuffer' ? Buffer.from(response.data) : response.data;
+            const result = await this.fileProcessorService.process(rawContent, file.name, effectiveMimeType);
+            if (!result) return null;
 
-            if (isDocx) {
-                return await this.usePandoc(Buffer.from(response.data), 'docx', file.name);
-            }
-            if (isXlsx) {
-                return await this.usePandoc(Buffer.from(response.data), 'xlsx', file.name);
-            }
-            if (isPptx) {
-                return await this.usePandoc(Buffer.from(response.data), 'pptx', file.name);
-            }
-
-            let content = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
-
-            // Use Pandoc for HTML or CSV (from Sheets)
-            if (content.includes('<html') || content.includes('<body') || file.mimeType === 'text/html') {
-                return await this.usePandoc(content, 'html', file.name);
-            }
-
-            if (isGoogleSheet || file.mimeType === 'text/csv') {
-                return await this.usePandoc(content, 'csv', file.name);
-            }
-
-            return content;
+            return {
+                content: result.content,
+                preChunked: result.chunks ? { chunks: result.chunks } : undefined,
+            };
         } catch (error) {
-            this.logger.error(`Failed to fetch/convert content for file ${file.name}: ${error.message}`);
-            return `[Content could not be extracted: ${error.message}]`;
-        }
-    }
-
-    private async extractTextFromPdf(buffer: Buffer, fileName: string): Promise<string> {
-        const tempDir = os.tmpdir();
-        const inputPath = path.join(tempDir, `input_${Date.now()}.pdf`);
-
-        try {
-            fs.writeFileSync(inputPath, buffer);
-
-            const { stdout, stderr } = await execAsync(`pdftotext -layout "${inputPath}" -`);
-            if (stderr) {
-                this.logger.warn(`pdftotext stderr for ${fileName}: ${stderr}`);
-            }
-            return stdout;
-        } catch (error) {
-            this.logger.error(`PDF extraction failed for ${fileName}: ${error.message}`);
-            return `[PDF Content could not be extracted: ${error.message}]`;
-        } finally {
-            if (fs.existsSync(inputPath)) {
-                fs.unlinkSync(inputPath);
-            }
-        }
-    }
-
-    private async usePandoc(content: string | Buffer, fromFormat: string, fileName: string): Promise<string> {
-        const tempDir = os.tmpdir();
-        const extension = fromFormat === 'html' ? 'html' :
-            fromFormat === 'csv' ? 'csv' :
-                fromFormat === 'docx' ? 'docx' :
-                    fromFormat === 'xlsx' ? 'xlsx' :
-                        fromFormat === 'pptx' ? 'pptx' : 'txt';
-        const inputPath = path.join(tempDir, `input_${Date.now()}.${extension}`);
-
-        try {
-            fs.writeFileSync(inputPath, content);
-
-            const { stdout, stderr } = await execAsync(`pandoc "${inputPath}" -f ${fromFormat} -t markdown`);
-            if (stderr) {
-                this.logger.warn(`Pandoc stderr for ${fileName}: ${stderr}`);
-            }
-            return stdout;
-        } catch (error) {
-            this.logger.error(`Pandoc conversion failed for ${fileName}: ${error.message}`);
-            return content.toString();
-        } finally {
-            if (fs.existsSync(inputPath)) {
-                fs.unlinkSync(inputPath);
-            }
+            this.logger.error(`Failed to fetch/convert content for file ${file.name}: ${(error as Error).message}`);
+            return null;
         }
     }
 

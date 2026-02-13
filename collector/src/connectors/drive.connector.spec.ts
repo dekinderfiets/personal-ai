@@ -1,17 +1,17 @@
 import { DriveConnector } from './drive.connector';
 import { ConfigService } from '@nestjs/config';
 import { GoogleAuthService } from './google-auth.service';
+import { FileProcessorService } from '../indexing/file-processor.service';
 import axios from 'axios';
 
 jest.mock('axios');
-jest.mock('child_process');
-jest.mock('fs');
 
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 describe('DriveConnector', () => {
     let connector: DriveConnector;
     let mockGoogleAuth: jest.Mocked<GoogleAuthService>;
+    let mockFileProcessor: { process: jest.Mock };
 
     const googleConfig: Record<string, string> = {
         'google.clientId': 'client-id',
@@ -27,7 +27,10 @@ describe('DriveConnector', () => {
         mockGoogleAuth = {
             getAccessToken: jest.fn().mockResolvedValue('test-access-token'),
         } as any;
-        connector = new DriveConnector(mockConfigService as any, mockGoogleAuth);
+        mockFileProcessor = {
+            process: jest.fn(),
+        };
+        connector = new DriveConnector(mockConfigService as any, mockGoogleAuth, mockFileProcessor as any);
     });
 
     describe('getSourceName', () => {
@@ -44,7 +47,7 @@ describe('DriveConnector', () => {
         it('should return false when any Google config is missing', () => {
             const config = { ...googleConfig, 'google.refreshToken': undefined };
             const mockCfg = { get: jest.fn((key: string) => config[key]) };
-            const c = new DriveConnector(mockCfg as any, mockGoogleAuth);
+            const c = new DriveConnector(mockCfg as any, mockGoogleAuth, mockFileProcessor as any);
             expect(c.isConfigured()).toBe(false);
         });
     });
@@ -75,12 +78,14 @@ describe('DriveConnector', () => {
     describe('fetch', () => {
         it('should return empty result when not configured', async () => {
             const mockCfg = { get: jest.fn().mockReturnValue(undefined) };
-            const c = new DriveConnector(mockCfg as any, mockGoogleAuth);
+            const c = new DriveConnector(mockCfg as any, mockGoogleAuth, mockFileProcessor as any);
             const result = await c.fetch(null, {});
             expect(result).toEqual({ documents: [], newCursor: {}, hasMore: false });
         });
 
         it('should fetch files and produce correct document structure', async () => {
+            mockFileProcessor.process.mockResolvedValue({ content: 'File content here', chunks: undefined, language: undefined });
+
             mockedAxios.get.mockImplementation(async (url: string, config?: any) => {
                 if (url === 'https://www.googleapis.com/drive/v3/files' && !config?.params?.q?.includes('in parents')) {
                     return {
@@ -127,6 +132,8 @@ describe('DriveConnector', () => {
         });
 
         it('should skip unsupported binary file types', async () => {
+            mockFileProcessor.process.mockResolvedValue(null);
+
             mockedAxios.get.mockImplementation(async (url: string) => {
                 if (url === 'https://www.googleapis.com/drive/v3/files') {
                     return {
@@ -143,11 +150,15 @@ describe('DriveConnector', () => {
                         },
                     };
                 }
+                // File content fetch
+                if (url.includes('/files/img1') && url.includes('alt=media')) {
+                    return { data: Buffer.from('binary data') };
+                }
                 return { data: {} };
             });
 
             const result = await connector.fetch(null, {});
-            // Binary file should be skipped (getFileContent returns null)
+            // Binary file should be skipped (fileProcessorService.process returns null)
             expect(result.documents.length).toBe(0);
         });
 
