@@ -53,13 +53,14 @@ export const githubConfig = registerAs('github', () => ({
     username: process.env.GITHUB_USERNAME,
 }));
 
-export const chromaConfig = registerAs('chroma', () => ({
-    url: process.env.CHROMA_URL || 'http://localhost:8001',
+export const elasticsearchConfig = registerAs('elasticsearch', () => ({
+    node: process.env.ELASTICSEARCH_URL || 'http://localhost:9200',
+    index: process.env.ELASTICSEARCH_INDEX || 'collector_documents',
 }));
 
 export const openaiConfig = registerAs('openai', () => ({
     apiKey: process.env.OPENAI_API_KEY,
-    embeddingModel: process.env.OPENAI_EMBEDDING_MODEL || '',
+    embeddingModel: process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-large',
 }));
 
 export const cohereConfig = registerAs('cohere', () => ({
