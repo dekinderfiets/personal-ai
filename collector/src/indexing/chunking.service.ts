@@ -1,10 +1,21 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { RecursiveCharacterTextSplitter, SupportedTextSplitterLanguage } from '@langchain/textsplitters';
+import { encoding_for_model } from 'tiktoken';
 import * as path from 'path';
 
-const DEFAULT_CHUNK_SIZE = 4000;
-const DEFAULT_CHUNK_OVERLAP = 200;
-const MIN_CONTENT_FOR_CHUNKING = 8000;
+const DEFAULT_CHUNK_SIZE = 512;
+const DEFAULT_CHUNK_OVERLAP = 64;
+const MIN_CONTENT_FOR_CHUNKING = 600;
+
+let _tokenizer: ReturnType<typeof encoding_for_model> | null = null;
+function getTokenizer() {
+    if (!_tokenizer) _tokenizer = encoding_for_model('gpt-4o');
+    return _tokenizer;
+}
+
+function tokenLength(text: string): number {
+    return getTokenizer().encode(text).length;
+}
 
 const EXTENSION_TO_LANGUAGE: Record<string, SupportedTextSplitterLanguage> = {
     '.ts': 'js',
@@ -59,7 +70,7 @@ export class ChunkingService {
     async chunkCode(content: string, filePath: string, options?: ChunkOptions): Promise<string[]> {
         const { chunkSize = DEFAULT_CHUNK_SIZE, chunkOverlap = DEFAULT_CHUNK_OVERLAP } = options || {};
 
-        if (content.length < MIN_CONTENT_FOR_CHUNKING) {
+        if (tokenLength(content) < MIN_CONTENT_FOR_CHUNKING) {
             return [content];
         }
 
@@ -74,6 +85,7 @@ export class ChunkingService {
             const splitter = RecursiveCharacterTextSplitter.fromLanguage(language, {
                 chunkSize,
                 chunkOverlap,
+                lengthFunction: tokenLength,
             });
             const docs = await splitter.createDocuments([content]);
             return docs.map(d => d.pageContent);
@@ -89,13 +101,14 @@ export class ChunkingService {
     async chunkText(content: string, options?: ChunkOptions): Promise<string[]> {
         const { chunkSize = DEFAULT_CHUNK_SIZE, chunkOverlap = DEFAULT_CHUNK_OVERLAP } = options || {};
 
-        if (content.length < MIN_CONTENT_FOR_CHUNKING) {
+        if (tokenLength(content) < MIN_CONTENT_FOR_CHUNKING) {
             return [content];
         }
 
         const splitter = new RecursiveCharacterTextSplitter({
             chunkSize,
             chunkOverlap,
+            lengthFunction: tokenLength,
         });
         const docs = await splitter.createDocuments([content]);
         return docs.map(d => d.pageContent);

@@ -6,11 +6,23 @@ import type { Where, Metadata } from 'chromadb';
 type IncludeField = 'documents' | 'metadatas' | 'distances' | 'embeddings' | 'uris';
 import axios from 'axios';
 import { createHash } from 'crypto';
+import { encoding_for_model } from 'tiktoken';
 import { DataSource, IndexDocument, SearchResult, NavigationResult } from '../types';
 
-const CHUNK_SIZE = 4000;
-const CHUNK_OVERLAP = 200;
-const MAX_CONTENT_LENGTH = 8000;
+const CHUNK_SIZE_TOKENS = 512;
+const CHUNK_OVERLAP_TOKENS = 64;
+const MIN_TOKENS_FOR_CHUNKING = 600;
+
+// Lazy singleton tokenizer
+let _tokenizer: ReturnType<typeof encoding_for_model> | null = null;
+function getTokenizer() {
+    if (!_tokenizer) _tokenizer = encoding_for_model('gpt-4o');
+    return _tokenizer;
+}
+
+function countTokens(text: string): number {
+    return getTokenizer().encode(text).length;
+}
 
 class OpenAIEmbedder implements EmbeddingFunction {
     name = 'openai';
@@ -80,51 +92,55 @@ export class ChromaService implements OnModuleInit {
     }
 
     private chunkContent(content: string): string[] {
-        if (content.length <= MAX_CONTENT_LENGTH) {
+        const tokenCount = countTokens(content);
+        if (tokenCount <= MIN_TOKENS_FOR_CHUNKING) {
             return [content];
         }
 
         const chunks: string[] = [];
-        let start = 0;
-        while (start < content.length) {
-            let end = Math.min(start + CHUNK_SIZE, content.length);
+        const sentences = this.splitIntoSentences(content);
+        let currentChunk: string[] = [];
+        let currentTokens = 0;
 
-            // If not at the end, find a good boundary
-            if (end < content.length) {
-                const windowStart = start + Math.floor(CHUNK_SIZE * 0.8);
-                const window = content.slice(windowStart, end);
+        for (const sentence of sentences) {
+            const sentenceTokens = countTokens(sentence);
 
-                // Try paragraph break first
-                const paraIdx = window.lastIndexOf('\n\n');
-                if (paraIdx !== -1) {
-                    end = windowStart + paraIdx + 2; // include the \n\n
-                } else {
-                    // Try line break
-                    const lineIdx = window.lastIndexOf('\n');
-                    if (lineIdx !== -1) {
-                        end = windowStart + lineIdx + 1;
-                    } else {
-                        // Try sentence boundary
-                        const sentenceMatch = window.match(/.*[.!?]\s/s);
-                        if (sentenceMatch) {
-                            end = windowStart + sentenceMatch[0].length;
-                        } else {
-                            // Try word boundary
-                            const spaceIdx = window.lastIndexOf(' ');
-                            if (spaceIdx !== -1) {
-                                end = windowStart + spaceIdx + 1;
-                            }
-                            // else: stick with the fixed end position
-                        }
-                    }
+            if (currentTokens + sentenceTokens > CHUNK_SIZE_TOKENS && currentChunk.length > 0) {
+                chunks.push(currentChunk.join(''));
+
+                // Build overlap from end of current chunk
+                let overlapTokens = 0;
+                const overlapSentences: string[] = [];
+                for (let i = currentChunk.length - 1; i >= 0; i--) {
+                    const st = countTokens(currentChunk[i]);
+                    if (overlapTokens + st > CHUNK_OVERLAP_TOKENS) break;
+                    overlapTokens += st;
+                    overlapSentences.unshift(currentChunk[i]);
                 }
+                currentChunk = [...overlapSentences];
+                currentTokens = overlapTokens;
             }
 
-            chunks.push(content.slice(start, end));
-            start = end - CHUNK_OVERLAP;
-            if (start + CHUNK_OVERLAP >= content.length) break;
+            currentChunk.push(sentence);
+            currentTokens += sentenceTokens;
         }
-        return chunks;
+
+        if (currentChunk.length > 0) {
+            chunks.push(currentChunk.join(''));
+        }
+
+        return chunks.length > 0 ? chunks : [content];
+    }
+
+    private splitIntoSentences(text: string): string[] {
+        // Split on paragraph breaks, line breaks, or sentence-ending punctuation
+        const parts: string[] = [];
+        const regex = /[^\n]+\n\n|[^\n]+\n|[^.!?]*[.!?]\s*|[^.!?\n]+$/g;
+        let match: RegExpExecArray | null;
+        while ((match = regex.exec(text)) !== null) {
+            if (match[0].trim()) parts.push(match[0]);
+        }
+        return parts.length > 0 ? parts : [text];
     }
 
     /**
@@ -136,6 +152,65 @@ export class ChromaService implements OnModuleInit {
             /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
             '',
         );
+    }
+
+    /**
+     * Build a context header to prepend to chunks before embedding.
+     * This enriches the embedding with document-level context (title, source, metadata)
+     * so the vector captures the chunk's meaning within its broader document context.
+     * The original content is stored separately for display.
+     */
+    private buildChunkContext(metadata: Record<string, unknown>, source: DataSource): string {
+        const parts: string[] = [];
+
+        const title = (metadata.title || metadata.subject || metadata.name || '') as string;
+        if (title) parts.push(`Document: ${title}`);
+        parts.push(`Source: ${source}`);
+
+        switch (source) {
+            case 'jira':
+                if (metadata.project) parts.push(`Project: ${metadata.project}`);
+                if (metadata.issueType) parts.push(`Type: ${metadata.issueType}`);
+                if (metadata.status) parts.push(`Status: ${metadata.status}`);
+                if (metadata.priority) parts.push(`Priority: ${metadata.priority}`);
+                break;
+            case 'slack':
+                if (metadata.channel) parts.push(`Channel: #${metadata.channel}`);
+                if (metadata.author) parts.push(`Author: ${metadata.author}`);
+                if (metadata.threadTs) parts.push('(thread reply)');
+                break;
+            case 'gmail':
+                if (metadata.from) parts.push(`From: ${metadata.from}`);
+                if (metadata.subject) parts.push(`Subject: ${metadata.subject}`);
+                break;
+            case 'drive':
+                if (metadata.folderPath) parts.push(`Path: ${metadata.folderPath}`);
+                if (metadata.mimeType) parts.push(`Type: ${metadata.mimeType}`);
+                break;
+            case 'confluence':
+                if (metadata.space) parts.push(`Space: ${metadata.spaceName || metadata.space}`);
+                if (metadata.type === 'comment') parts.push('(page comment)');
+                break;
+            case 'calendar':
+                if (metadata.start) parts.push(`When: ${metadata.start}`);
+                if (metadata.location) parts.push(`Location: ${metadata.location}`);
+                break;
+            case 'github':
+                if (metadata.repo) parts.push(`Repository: ${metadata.repo}`);
+                if (metadata.type) parts.push(`Type: ${metadata.type}`);
+                if (metadata.state) parts.push(`State: ${metadata.state}`);
+                if (metadata.filePath) parts.push(`File: ${metadata.filePath}`);
+                break;
+        }
+
+        const dateStr = (metadata.createdAt || metadata.date || metadata.start || metadata.updatedAt) as string;
+        if (dateStr) {
+            try {
+                parts.push(`Date: ${new Date(dateStr).toISOString().split('T')[0]}`);
+            } catch { /* skip invalid dates */ }
+        }
+
+        return parts.join('\n');
     }
 
     private flattenMetadata(metadata: Record<string, unknown>): Metadata {
@@ -183,16 +258,24 @@ export class ChromaService implements OnModuleInit {
 
             if (chunks.length === 1) {
                 const content = preChunked ? chunks[0] : sanitizedContent;
+                const contextHeader = this.buildChunkContext(doc.metadata as Record<string, unknown>, source);
+                const enrichedContent = contextHeader ? `${contextHeader}\n\n${content}` : content;
                 items.push({
                     id: doc.id,
-                    content,
-                    metadata: { ...this.flattenMetadata(doc.metadata), _contentHash: this.contentHash(content) },
+                    content: enrichedContent,
+                    metadata: {
+                        ...this.flattenMetadata(doc.metadata),
+                        _contentHash: this.contentHash(content),
+                        _originalContent: content.slice(0, 8000),
+                    },
                 });
             } else {
+                const contextHeader = this.buildChunkContext(doc.metadata as Record<string, unknown>, source);
                 for (let i = 0; i < chunks.length; i++) {
+                    const enrichedContent = contextHeader ? `${contextHeader}\n\n${chunks[i]}` : chunks[i];
                     items.push({
                         id: `${doc.id}_chunk_${i}`,
-                        content: chunks[i],
+                        content: enrichedContent,
                         metadata: {
                             ...this.flattenMetadata({
                                 ...doc.metadata,
@@ -201,6 +284,7 @@ export class ChromaService implements OnModuleInit {
                                 parentDocId: doc.id,
                             }),
                             _contentHash: this.contentHash(chunks[i]),
+                            _originalContent: chunks[i].slice(0, 8000),
                         },
                     });
                 }
@@ -416,14 +500,16 @@ export class ChromaService implements OnModuleInit {
 
         const results = await collection.get(getArgs);
 
-        return results.ids.map((id, i) => ({
-            id,
-            source,
-            content: results.documents?.[i] || '',
-            metadata: (results.metadatas?.[i] as Record<string, unknown>) || {},
-            // Score keyword matches by how many terms appear, normalized to 0-1
-            score: this.computeKeywordScore(results.documents?.[i] || '', terms),
-        }));
+        return results.ids.map((id, i) => {
+            const metadata = (results.metadatas?.[i] as Record<string, unknown>) || {};
+            return {
+                id,
+                source,
+                content: (metadata._originalContent as string) || results.documents?.[i] || '',
+                metadata,
+                score: this.computeKeywordScore(results.documents?.[i] || '', terms),
+            };
+        });
     }
 
     private async hybridSearch(
@@ -486,11 +572,12 @@ export class ChromaService implements OnModuleInit {
                 // Cosine distance range: 0 (identical) to 2 (opposite)
                 // Convert to similarity: 1 - distance gives range [-1, 1], clamp to [0, 1]
                 const score = Math.max(0, 1 - distance);
+                const metadata = (results.metadatas?.[0]?.[i] as Record<string, unknown>) || {};
                 parsed.push({
                     id: results.ids[0][i],
                     source,
-                    content: results.documents?.[0]?.[i] || '',
-                    metadata: (results.metadatas?.[0]?.[i] as Record<string, unknown>) || {},
+                    content: (metadata._originalContent as string) || results.documents?.[0]?.[i] || '',
+                    metadata,
                     score,
                 });
             }
@@ -644,13 +731,16 @@ export class ChromaService implements OnModuleInit {
 
             const result = await collection.get(getArgs);
 
-            const docs: SearchResult[] = result.ids.map((id, i) => ({
-                id,
-                source,
-                content: result.documents?.[i] || '',
-                metadata: (result.metadatas?.[i] as Record<string, unknown>) || {},
-                score: 0,
-            }));
+            const docs: SearchResult[] = result.ids.map((id, i) => {
+                const metadata = (result.metadatas?.[i] as Record<string, unknown>) || {};
+                return {
+                    id,
+                    source,
+                    content: (metadata._originalContent as string) || result.documents?.[i] || '',
+                    metadata,
+                    score: 0,
+                };
+            });
 
             // Sort by updatedAtTs descending (most recent first)
             docs.sort((a, b) => {
@@ -772,11 +862,12 @@ export class ChromaService implements OnModuleInit {
 
             if (result.ids.length === 0) return null;
 
+            const metadata = (result.metadatas?.[0] as Record<string, unknown>) || {};
             return {
                 id: result.ids[0],
                 source,
-                content: result.documents?.[0] || '',
-                metadata: (result.metadatas?.[0] as Record<string, unknown>) || {},
+                content: (metadata._originalContent as string) || result.documents?.[0] || '',
+                metadata,
                 score: 1,
             };
         } catch {
@@ -797,13 +888,16 @@ export class ChromaService implements OnModuleInit {
                 limit,
             });
 
-            return result.ids.map((id, i) => ({
-                id,
-                source,
-                content: result.documents?.[i] || '',
-                metadata: (result.metadatas?.[i] as Record<string, unknown>) || {},
-                score: 1,
-            }));
+            return result.ids.map((id, i) => {
+                const metadata = (result.metadatas?.[i] as Record<string, unknown>) || {};
+                return {
+                    id,
+                    source,
+                    content: (metadata._originalContent as string) || result.documents?.[i] || '',
+                    metadata,
+                    score: 1,
+                };
+            });
         } catch {
             return [];
         }
