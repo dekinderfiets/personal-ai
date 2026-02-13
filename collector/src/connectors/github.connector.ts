@@ -4,7 +4,7 @@ import axios, { AxiosInstance } from 'axios';
 import * as crypto from 'crypto';
 import * as path from 'path';
 import { BaseConnector } from './base.connector';
-import { ChunkingService } from '../indexing/chunking.service';
+import { FileProcessorService, ProcessedFile } from '../indexing/file-processor.service';
 import { Cursor, IndexRequest, ConnectorResult, IndexDocument, GitHubDocument, DataSource } from '../types';
 
 interface GitHubRepo {
@@ -133,7 +133,7 @@ export class GitHubConnector extends BaseConnector {
 
     constructor(
         private configService: ConfigService,
-        private chunkingService: ChunkingService,
+        private fileProcessorService: FileProcessorService,
     ) {
         super();
         this.token = this.configService.get<string>('github.token') || '';
@@ -684,36 +684,23 @@ export class GitHubConnector extends BaseConnector {
             );
 
             const content = response.data;
-
-            // Null-byte check for binary files that slipped through extension filtering
-            if (typeof content !== 'string' || content.includes('\0')) {
-                return null;
-            }
+            const result = await this.fileProcessorService.process(content, item.path);
+            if (!result) return null;
 
             const ext = path.extname(item.path).toLowerCase();
-            const language = this.chunkingService.getLanguage(item.path);
             const sha7 = item.sha.substring(0, 7);
             const pathHash = crypto.createHash('md5').update(item.path).digest('hex').substring(0, 12);
             const docId = `github_file_${owner}_${repo}_${sha7}_${pathHash}`;
             const now = new Date().toISOString();
 
-            // Build file header for context
             const fileHeader = [
                 `# ${item.path}`,
                 `Repository: ${repoFullName}`,
-                language ? `Language: ${language}` : '',
+                result.language ? `Language: ${result.language}` : '',
                 '',
             ].filter(Boolean).join('\n');
 
-            const fullContent = fileHeader + content;
-
-            // Chunk the content
-            let chunks: string[];
-            if (this.chunkingService.isCodeFile(item.path)) {
-                chunks = await this.chunkingService.chunkCode(fullContent, item.path);
-            } else {
-                chunks = await this.chunkingService.chunkText(fullContent);
-            }
+            const fullContent = fileHeader + result.content;
 
             const doc: GitHubDocument = {
                 id: docId,
@@ -732,15 +719,14 @@ export class GitHubConnector extends BaseConnector {
                     parentId: `github_repo_${repoFullName.replace('/', '_')}`,
                     filePath: item.path,
                     fileExtension: ext,
-                    fileLanguage: language || undefined,
+                    fileLanguage: result.language,
                     fileSha: item.sha,
                     fileSize: item.size,
                 },
             };
 
-            // Set preChunked if content was split into multiple chunks
-            if (chunks.length > 1) {
-                doc.preChunked = { chunks };
+            if (result.chunks && result.chunks.length > 1) {
+                doc.preChunked = { chunks: result.chunks };
             }
 
             return doc;

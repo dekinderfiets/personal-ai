@@ -1,6 +1,6 @@
 import { GitHubConnector } from './github.connector';
 import { ConfigService } from '@nestjs/config';
-import { ChunkingService } from '../indexing/chunking.service';
+import { FileProcessorService } from '../indexing/file-processor.service';
 import axios from 'axios';
 
 jest.mock('axios');
@@ -8,7 +8,7 @@ const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 describe('GitHubConnector', () => {
     let connector: GitHubConnector;
-    let mockChunkingService: jest.Mocked<ChunkingService>;
+    let mockFileProcessor: { process: jest.Mock };
     let mockApiGet: jest.Mock;
 
     const githubConfig: Record<string, string> = {
@@ -29,14 +29,11 @@ describe('GitHubConnector', () => {
         const mockConfigService = {
             get: jest.fn((key: string) => githubConfig[key]),
         };
-        mockChunkingService = {
-            getLanguage: jest.fn().mockReturnValue('js'),
-            isCodeFile: jest.fn().mockReturnValue(true),
-            chunkCode: jest.fn().mockResolvedValue(['chunk1']),
-            chunkText: jest.fn().mockResolvedValue(['chunk1']),
-        } as any;
+        mockFileProcessor = {
+            process: jest.fn().mockResolvedValue({ content: 'processed', chunks: undefined, language: 'js' }),
+        };
 
-        connector = new GitHubConnector(mockConfigService as any, mockChunkingService);
+        connector = new GitHubConnector(mockConfigService as any, mockFileProcessor as any);
     });
 
     describe('getSourceName', () => {
@@ -52,13 +49,13 @@ describe('GitHubConnector', () => {
 
         it('should return false when token is missing', () => {
             const cfg = { get: jest.fn((key: string) => key === 'github.username' ? 'user' : '') };
-            const c = new GitHubConnector(cfg as any, mockChunkingService);
+            const c = new GitHubConnector(cfg as any, mockFileProcessor as any);
             expect(c.isConfigured()).toBe(false);
         });
 
         it('should return false when username is missing', () => {
             const cfg = { get: jest.fn((key: string) => key === 'github.token' ? 'token' : '') };
-            const c = new GitHubConnector(cfg as any, mockChunkingService);
+            const c = new GitHubConnector(cfg as any, mockFileProcessor as any);
             expect(c.isConfigured()).toBe(false);
         });
     });
@@ -66,7 +63,7 @@ describe('GitHubConnector', () => {
     describe('fetch', () => {
         it('should return empty result when not configured', async () => {
             const cfg = { get: jest.fn().mockReturnValue('') };
-            const c = new GitHubConnector(cfg as any, mockChunkingService);
+            const c = new GitHubConnector(cfg as any, mockFileProcessor as any);
             const result = await c.fetch(null, {});
             expect(result).toEqual({ documents: [], newCursor: {}, hasMore: false });
         });
@@ -321,6 +318,8 @@ describe('GitHubConnector', () => {
                     return { data: {} };
                 });
 
+                mockFileProcessor.process.mockResolvedValueOnce({ content: 'const x = 1;', language: 'ts' });
+
                 const cursor = {
                     source: 'github' as const,
                     lastSync: '2024-01-01',
@@ -351,8 +350,7 @@ describe('GitHubConnector', () => {
                     return { data: {} };
                 });
 
-                // Mock chunking to return multiple chunks
-                mockChunkingService.chunkCode.mockResolvedValueOnce(['chunk1', 'chunk2', 'chunk3']);
+                mockFileProcessor.process.mockResolvedValueOnce({ content: 'lots of code', chunks: ['chunk1', 'chunk2', 'chunk3'], language: 'ts' });
 
                 const cursor = {
                     source: 'github' as const,
@@ -381,7 +379,7 @@ describe('GitHubConnector', () => {
                     return { data: {} };
                 });
 
-                mockChunkingService.chunkCode.mockResolvedValueOnce(['single-chunk']);
+                mockFileProcessor.process.mockResolvedValueOnce({ content: 'const x = 1;', language: 'ts' });
 
                 const cursor = {
                     source: 'github' as const,
