@@ -43,6 +43,7 @@ import { validate } from './config/validation';
 
 import { FileSaverService } from './indexing/file-saver.service';
 import { ChunkingService } from './indexing/chunking.service';
+import { FileProcessorService } from './indexing/file-processor.service';
 
 @Module({
     imports: [
@@ -78,6 +79,7 @@ import { ChunkingService } from './indexing/chunking.service';
         FileSaverService,
         ChromaService,
         ChunkingService,
+        FileProcessorService,
         IndexingService,
         JiraConnector,
         SlackConnector,
