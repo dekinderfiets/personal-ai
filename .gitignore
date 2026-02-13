@@ -57,6 +57,9 @@ Thumbs.db
 # If there are specific local data volumes, they should be ignored here
 # e.g., services/n8n/data/
 
+# Worktrees
+.worktrees/
+
 # Project Specific
 brain/
 context/
