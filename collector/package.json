@@ -15,7 +15,7 @@
         "test": "jest"
     },
     "dependencies": {
-        "@elastic/elasticsearch": "^9.3.1",
+        "@elastic/elasticsearch": "^8.19.1",
         "@langchain/textsplitters": "^1.0.1",
         "@nestjs/common": "^11.1.9",
         "@nestjs/config": "^4.0.2",
