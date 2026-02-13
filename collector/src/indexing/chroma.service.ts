@@ -1,8 +1,9 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChromaClient, Collection, EmbeddingFunction } from 'chromadb';
 import type { Where, Metadata } from 'chromadb';
 import { CohereClient } from 'cohere-ai';
+import Redis from 'ioredis';
 
 type IncludeField = 'documents' | 'metadatas' | 'distances' | 'embeddings' | 'uris';
 import axios from 'axios';
@@ -41,16 +42,25 @@ class OpenAIEmbedder implements EmbeddingFunction {
 }
 
 @Injectable()
-export class ChromaService implements OnModuleInit {
+export class ChromaService implements OnModuleInit, OnModuleDestroy {
     private readonly logger = new Logger(ChromaService.name);
     private client!: ChromaClient;
     private embeddingFunction: EmbeddingFunction | undefined;
     private collections: Map<DataSource, Collection> = new Map();
     private cohereClient: CohereClient | null = null;
+    private redis!: Redis;
+    private static readonly EMBEDDING_CACHE_PREFIX = 'search:embedding:';
+    private static readonly EMBEDDING_CACHE_TTL_SECS = 300; // 5 minutes
 
     constructor(private configService: ConfigService) {}
 
+    async onModuleDestroy() {
+        await this.redis.quit();
+    }
+
     async onModuleInit() {
+        this.redis = new Redis(this.configService.get<string>('redis.url')!);
+
         try {
             const chromaUrl = this.configService.get<string>('chroma.url') || 'http://localhost:8001';
             const url = new URL(chromaUrl);
@@ -374,6 +384,34 @@ export class ChromaService implements OnModuleInit {
     }
 
     /**
+     * Get query embedding with Redis cache to avoid redundant OpenAI API calls.
+     */
+    private async getQueryEmbedding(query: string): Promise<number[]> {
+        const cacheKey = `${ChromaService.EMBEDDING_CACHE_PREFIX}${createHash('sha256').update(query).digest('hex').slice(0, 32)}`;
+
+        try {
+            const cached = await this.redis.getBuffer(cacheKey);
+            if (cached) {
+                return Array.from(new Float32Array(cached.buffer, cached.byteOffset, cached.byteLength / 4));
+            }
+        } catch {
+            // Cache miss or Redis error — fall through to generate
+        }
+
+        const embeddings = await this.embeddingFunction!.generate([query]);
+        const embedding = embeddings[0];
+
+        try {
+            const buffer = Buffer.from(new Float32Array(embedding).buffer);
+            await this.redis.set(cacheKey, buffer, 'EX', ChromaService.EMBEDDING_CACHE_TTL_SECS);
+        } catch {
+            // Non-critical — continue without caching
+        }
+
+        return embedding;
+    }
+
+    /**
      * Expand query terms for keyword search.
      * Splits compound terms (hyphenated, camelCase) into individual tokens.
      */
@@ -427,11 +465,10 @@ export class ChromaService implements OnModuleInit {
         const whereClause = this.buildWhereClause(where, startDate, endDate);
         const fetchLimit = limit + offset;
 
-        // Pre-compute query embedding once for vector/hybrid searches
+        // Pre-compute query embedding once for vector/hybrid searches (cached)
         let queryEmbedding: number[] | undefined;
         if ((searchType === 'vector' || searchType === 'hybrid') && this.embeddingFunction) {
-            const embeddings = await this.embeddingFunction.generate([query]);
-            queryEmbedding = embeddings[0];
+            queryEmbedding = await this.getQueryEmbedding(query);
         }
 
         // Query all collections in parallel
