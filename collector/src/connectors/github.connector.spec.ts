@@ -107,88 +107,28 @@ describe('GitHubConnector', () => {
                 expect(doc.content).toContain('TypeScript');
                 expect(doc.content).toContain('42');
 
-                // Should transition to issues phase
+                // Should transition to prs phase
                 const state = JSON.parse(result.newCursor.syncToken!);
-                expect(state.phase).toBe('issues');
+                expect(state.phase).toBe('prs');
                 expect(state.repos).toEqual(['testuser/repo1']);
             });
         });
 
-        describe('phase: issues', () => {
-            const makeIssuesState = (repos = ['testuser/repo1']) => JSON.stringify({
-                phase: 'issues',
+        describe('phase: prs', () => {
+            const makePRsState = () => JSON.stringify({
+                phase: 'prs',
                 repoIdx: 0,
                 page: 1,
-                repos,
+                repos: ['testuser/repo1'],
                 repoDefaultBranches: { 'testuser/repo1': 'main' },
-                indexFiles: false,
+                indexFiles: true,
             });
 
-            it('should create issue documents', async () => {
-                mockApiGet.mockResolvedValueOnce({
-                    data: [{
-                        id: 100,
-                        number: 1,
-                        title: 'Bug report',
-                        body: 'Something is broken',
-                        state: 'open',
-                        user: { login: 'reporter' },
-                        labels: [{ name: 'bug' }],
-                        milestone: null,
-                        assignees: [{ login: 'testuser' }],
-                        html_url: 'https://github.com/testuser/repo1/issues/1',
-                        created_at: '2024-01-01T00:00:00Z',
-                        updated_at: '2024-01-02T00:00:00Z',
-                        // No pull_request field = it's a real issue
-                    }],
-                });
-
-                const cursor = {
-                    source: 'github' as const,
-                    lastSync: '2024-01-01',
-                    syncToken: makeIssuesState(),
-                };
-                const result = await connector.fetch(cursor, {});
-
-                expect(result.documents.length).toBe(1);
-                const doc = result.documents[0];
-                expect(doc.id).toBe('github_issue_testuser_repo1_1');
-                expect(doc.metadata).toMatchObject({
-                    type: 'issue',
-                    title: 'Bug report',
-                    state: 'open',
-                    author: 'reporter',
-                    labels: ['bug'],
-                    is_assigned_to_me: true,
-                });
-            });
-
-            it('should detect PRs via pull_request field and fetch details', async () => {
-                // Issues list returns a PR
+            it('should fetch PRs with reviews and comments', async () => {
                 mockApiGet.mockImplementation(async (url: string) => {
-                    if (url.includes('/issues') && !url.includes('/pulls/')) {
+                    if (url.includes('/pulls') && !url.includes('/reviews') && !url.includes('/comments')) {
                         return {
                             data: [{
-                                id: 200,
-                                number: 5,
-                                title: 'Feature PR',
-                                body: 'Adds feature',
-                                state: 'open',
-                                user: { login: 'testuser' },
-                                labels: [{ name: 'feature' }],
-                                milestone: null,
-                                assignees: [],
-                                html_url: 'https://github.com/testuser/repo1/pull/5',
-                                created_at: '2024-01-01T00:00:00Z',
-                                updated_at: '2024-01-02T00:00:00Z',
-                                pull_request: { url: 'https://api.github.com/repos/testuser/repo1/pulls/5' },
-                            }],
-                        };
-                    }
-                    // PR details
-                    if (url.includes('/pulls/5') && !url.includes('/reviews') && !url.includes('/comments')) {
-                        return {
-                            data: {
                                 id: 200,
                                 number: 5,
                                 title: 'Feature PR',
@@ -205,10 +145,9 @@ describe('GitHubConnector', () => {
                                 draft: false,
                                 head: { ref: 'feature-branch' },
                                 base: { ref: 'main' },
-                            },
+                            }],
                         };
                     }
-                    // Reviews
                     if (url.includes('/reviews')) {
                         return {
                             data: [{
@@ -221,7 +160,6 @@ describe('GitHubConnector', () => {
                             }],
                         };
                     }
-                    // Comments
                     if (url.includes('/comments')) {
                         return {
                             data: [{
@@ -240,11 +178,10 @@ describe('GitHubConnector', () => {
                 const cursor = {
                     source: 'github' as const,
                     lastSync: '2024-01-01',
-                    syncToken: makeIssuesState(),
+                    syncToken: makePRsState(),
                 };
                 const result = await connector.fetch(cursor, {});
 
-                // Should have PR doc + review doc + comment doc
                 expect(result.documents.length).toBe(3);
 
                 const prDoc = result.documents.find(d => d.metadata.type === 'pull_request');
@@ -260,33 +197,40 @@ describe('GitHubConnector', () => {
                 expect(commentDoc).toBeDefined();
                 expect(commentDoc!.metadata.author).toBe('commenter');
             });
-        });
 
-        it('should respect request.indexFiles even when cursor has stale value', async () => {
-            // Simulate cursor from a previous run where indexFiles was false
-            const staleState = {
-                phase: 'issues',
-                repoIdx: 0,
-                page: 1,
-                repos: ['testuser/repo1'],
-                repoDefaultBranches: { 'testuser/repo1': 'main' },
-                indexFiles: false,
-            };
+            it('should transition to files phase after PRs when indexFiles is true', async () => {
+                mockApiGet.mockResolvedValueOnce({ data: [] }); // no PRs
 
-            // Mock issues response with no more pages
-            mockApiGet.mockResolvedValueOnce({
-                data: [], // no issues
+                const cursor = {
+                    source: 'github' as const,
+                    lastSync: '',
+                    syncToken: makePRsState(),
+                };
+                const result = await connector.fetch(cursor, {});
+
+                const newState = JSON.parse(result.newCursor.syncToken!);
+                expect(newState.phase).toBe('files');
             });
 
-            const result = await connector.fetch(
-                { source: 'github' as const, lastSync: '', syncToken: JSON.stringify(staleState) },
-                { indexFiles: true },
-            );
+            it('should skip files phase when indexFiles is false', async () => {
+                const state = JSON.stringify({
+                    phase: 'prs',
+                    repoIdx: 0,
+                    page: 1,
+                    repos: ['testuser/repo1'],
+                    repoDefaultBranches: { 'testuser/repo1': 'main' },
+                    indexFiles: false,
+                });
+                mockApiGet.mockResolvedValueOnce({ data: [] }); // no PRs
 
-            // Should transition to files phase, not skip it
-            const newState = JSON.parse(result.newCursor.syncToken!);
-            expect(newState.phase).toBe('files');
-            expect(newState.indexFiles).toBe(true);
+                const result = await connector.fetch(
+                    { source: 'github' as const, lastSync: '', syncToken: state },
+                    { indexFiles: false },
+                );
+
+                // Single repo, no more phases -> done
+                expect(result.hasMore).toBe(false);
+            });
         });
 
         describe('phase: files', () => {

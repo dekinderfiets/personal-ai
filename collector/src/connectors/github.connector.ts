@@ -25,22 +25,6 @@ interface GitHubRepo {
     default_branch: string;
 }
 
-interface GitHubIssue {
-    id: number;
-    number: number;
-    title: string;
-    body: string | null;
-    state: string;
-    user: { login: string };
-    labels: { name: string }[];
-    milestone: { title: string } | null;
-    assignees: { login: string }[];
-    html_url: string;
-    created_at: string;
-    updated_at: string;
-    pull_request?: { url: string };
-}
-
 interface GitHubPR {
     id: number;
     number: number;
@@ -165,7 +149,7 @@ export class GitHubConnector extends BaseConnector {
 
         // Parse sync state from cursor
         let state: {
-            phase: 'repos' | 'issues' | 'files';
+            phase: 'repos' | 'prs' | 'files';
             repoIdx: number;
             page: number;
             repos: string[];
@@ -187,8 +171,6 @@ export class GitHubConnector extends BaseConnector {
         // Always respect the current request's indexFiles setting over stale cursor state
         state.indexFiles = request.indexFiles !== false;
 
-        const since = cursor?.lastSync && !request.fullReindex ? cursor.lastSync : undefined;
-
         // Phase 1: Fetch repos list
         if (state.phase === 'repos') {
             const repos = await this.listRepositories(request.repos);
@@ -198,9 +180,10 @@ export class GitHubConnector extends BaseConnector {
                 state.repoDefaultBranches[repo.full_name] = repo.default_branch;
             }
             state.indexFiles = request.indexFiles !== false;
-            state.phase = 'issues';
+            state.phase = 'prs';
             state.repoIdx = 0;
             state.page = 1;
+            state.fileOffset = 0;
 
             // Create repo documents
             const documents: IndexDocument[] = repos.map(repo => this.repoToDocument(repo));
@@ -223,31 +206,25 @@ export class GitHubConnector extends BaseConnector {
         const repoFullName = state.repos[state.repoIdx];
         const documents: IndexDocument[] = [];
 
-        // Phase 2: Fetch issues (which also includes PRs on GitHub API)
-        if (state.phase === 'issues') {
-            const { items, hasNextPage } = await this.fetchIssuesAndPRs(repoFullName, state.page, since);
+        // Phase 2: Fetch PRs, reviews, and comments
+        if (state.phase === 'prs') {
+            const { items, hasNextPage } = await this.fetchPullRequests(repoFullName, state.page);
 
-            for (const item of items) {
-                if (item.pull_request) {
-                    // It's a PR - fetch full PR details, reviews, and comments
-                    const prDocs = await this.fetchPRDetails(repoFullName, item.number, since);
-                    documents.push(...prDocs);
-                } else {
-                    documents.push(this.issueToDocument(repoFullName, item));
-                }
+            for (const pr of items) {
+                const prDocs = await this.fetchPRDetails(repoFullName, pr);
+                documents.push(...prDocs);
             }
 
             if (hasNextPage) {
                 state.page++;
             } else {
-                // After issues, enter files phase if enabled; otherwise advance to next repo
+                // After PRs, enter files phase if enabled; otherwise advance to next repo
                 if (state.indexFiles) {
                     state.phase = 'files';
                     state.page = 1;
                 } else {
                     state.repoIdx++;
                     state.page = 1;
-                    // Check if we wrapped past all repos
                     if (state.repoIdx >= state.repos.length) {
                         state.phase = 'repos';
                         state.repoIdx = 0;
@@ -283,7 +260,7 @@ export class GitHubConnector extends BaseConnector {
             } else {
                 // Done with this repo's files, move to next repo
                 state.repoIdx++;
-                state.phase = 'issues';
+                state.phase = 'prs';
                 state.page = 1;
                 state.fileOffset = 0;
 
@@ -343,71 +320,6 @@ export class GitHubConnector extends BaseConnector {
         }
     }
 
-    private async fetchIssuesAndPRs(
-        repoFullName: string,
-        page: number,
-        since?: string,
-    ): Promise<{ items: GitHubIssue[]; hasNextPage: boolean }> {
-        try {
-            const response = await this.api.get<GitHubIssue[]>(`/repos/${repoFullName}/issues`, {
-                params: {
-                    state: 'all',
-                    sort: 'updated',
-                    direction: 'asc',
-                    per_page: 50,
-                    page,
-                    ...(since ? { since } : {}),
-                },
-            });
-
-            return {
-                items: response.data,
-                hasNextPage: response.data.length === 50,
-            };
-        } catch (error) {
-            this.logger.error(`Failed to fetch issues for ${repoFullName}: ${(error as Error).message}`);
-            return { items: [], hasNextPage: false };
-        }
-    }
-
-    private async fetchPRDetails(
-        repoFullName: string,
-        prNumber: number,
-        since?: string,
-    ): Promise<IndexDocument[]> {
-        const documents: IndexDocument[] = [];
-
-        try {
-            // Fetch PR details
-            const prResponse = await this.api.get<GitHubPR>(`/repos/${repoFullName}/pulls/${prNumber}`);
-            const pr = prResponse.data;
-            documents.push(this.prToDocument(repoFullName, pr));
-
-            // Fetch reviews
-            const reviewsResponse = await this.api.get<GitHubReview[]>(
-                `/repos/${repoFullName}/pulls/${prNumber}/reviews`,
-            );
-            for (const review of reviewsResponse.data) {
-                if (review.body) {
-                    documents.push(this.reviewToDocument(repoFullName, prNumber, pr.title, review));
-                }
-            }
-
-            // Fetch PR comments
-            const commentsResponse = await this.api.get<GitHubComment[]>(
-                `/repos/${repoFullName}/pulls/${prNumber}/comments`,
-                { params: since ? { since } : {} },
-            );
-            for (const comment of commentsResponse.data) {
-                documents.push(this.commentToDocument(repoFullName, prNumber, pr.title, comment));
-            }
-        } catch (error) {
-            this.logger.warn(`Failed to fetch PR #${prNumber} details for ${repoFullName}: ${(error as Error).message}`);
-        }
-
-        return documents;
-    }
-
     private repoToDocument(repo: GitHubRepo): GitHubDocument {
         const content = [
             `# ${repo.full_name}`,
@@ -441,41 +353,64 @@ export class GitHubConnector extends BaseConnector {
         };
     }
 
-    private issueToDocument(repoFullName: string, issue: GitHubIssue): GitHubDocument {
-        const content = [
-            `# [${repoFullName}#${issue.number}] ${issue.title}`,
-            '',
-            `**State**: ${issue.state}`,
-            `**Author**: ${issue.user.login}`,
-            `**Labels**: ${issue.labels.map(l => l.name).join(', ') || 'None'}`,
-            `**Assignees**: ${issue.assignees.map(a => a.login).join(', ') || 'Unassigned'}`,
-            '',
-            issue.body || 'No description',
-        ].join('\n');
+    // ----------------------------------------------------------------
+    // PR indexing
+    // ----------------------------------------------------------------
 
-        return {
-            id: `github_issue_${repoFullName.replace('/', '_')}_${issue.number}`,
-            source: 'github',
-            content,
-            metadata: {
-                id: `github_issue_${repoFullName.replace('/', '_')}_${issue.number}`,
-                source: 'github',
-                type: 'issue',
-                title: issue.title,
-                repo: repoFullName,
-                number: issue.number,
-                state: issue.state,
-                author: issue.user.login,
-                labels: issue.labels.map(l => l.name),
-                milestone: issue.milestone?.title || null,
-                assignees: issue.assignees.map(a => a.login),
-                createdAt: issue.created_at,
-                updatedAt: issue.updated_at,
-                url: issue.html_url,
-                is_assigned_to_me: issue.assignees.some(a => a.login === this.username),
-                is_author: issue.user.login === this.username,
-            },
-        };
+    private async fetchPullRequests(
+        repoFullName: string,
+        page: number,
+    ): Promise<{ items: GitHubPR[]; hasNextPage: boolean }> {
+        try {
+            const response = await this.api.get<GitHubPR[]>(`/repos/${repoFullName}/pulls`, {
+                params: {
+                    state: 'all',
+                    sort: 'updated',
+                    direction: 'desc',
+                    per_page: 50,
+                    page,
+                },
+            });
+
+            return {
+                items: response.data,
+                hasNextPage: response.data.length === 50,
+            };
+        } catch (error) {
+            this.logger.error(`Failed to fetch PRs for ${repoFullName}: ${(error as Error).message}`);
+            return { items: [], hasNextPage: false };
+        }
+    }
+
+    private async fetchPRDetails(
+        repoFullName: string,
+        pr: GitHubPR,
+    ): Promise<IndexDocument[]> {
+        const documents: IndexDocument[] = [this.prToDocument(repoFullName, pr)];
+
+        try {
+            // Fetch reviews
+            const reviewsResponse = await this.api.get<GitHubReview[]>(
+                `/repos/${repoFullName}/pulls/${pr.number}/reviews`,
+            );
+            for (const review of reviewsResponse.data) {
+                if (review.body) {
+                    documents.push(this.reviewToDocument(repoFullName, pr.number, pr.title, review));
+                }
+            }
+
+            // Fetch PR comments
+            const commentsResponse = await this.api.get<GitHubComment[]>(
+                `/repos/${repoFullName}/pulls/${pr.number}/comments`,
+            );
+            for (const comment of commentsResponse.data) {
+                documents.push(this.commentToDocument(repoFullName, pr.number, pr.title, comment));
+            }
+        } catch (error) {
+            this.logger.warn(`Failed to fetch PR #${pr.number} details for ${repoFullName}: ${(error as Error).message}`);
+        }
+
+        return documents;
     }
 
     private prToDocument(repoFullName: string, pr: GitHubPR): GitHubDocument {

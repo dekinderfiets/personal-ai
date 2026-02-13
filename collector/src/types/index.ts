@@ -181,7 +181,7 @@ export interface GitHubDocument extends BaseDocument {
     metadata: {
         id: string;
         source: 'github';
-        type: 'repository' | 'issue' | 'pull_request' | 'pr_review' | 'pr_comment' | 'file';
+        type: 'repository' | 'pull_request' | 'pr_review' | 'pr_comment' | 'file';
         title: string;
         repo: string;
         number?: number;

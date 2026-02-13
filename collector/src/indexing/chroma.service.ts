@@ -926,36 +926,53 @@ export class ChromaService implements OnModuleInit, OnModuleDestroy {
         const whereClause = this.buildWhereClause(where, startDate, endDate);
 
         try {
-            // Fetch all matching documents (ChromaDB doesn't support ordering in .get())
-            const getArgs: { where?: Where; include: IncludeField[] } = {
-                include: ['documents', 'metadatas'] as IncludeField[],
+            // Phase 1: Fetch only metadatas (lightweight) for sorting and pagination
+            const metaArgs: { where?: Where; include: IncludeField[] } = {
+                include: ['metadatas'] as IncludeField[],
             };
-            if (whereClause) getArgs.where = whereClause;
+            if (whereClause) metaArgs.where = whereClause;
 
-            const result = await collection.get(getArgs);
+            const metaResult = await collection.get(metaArgs);
+            const total = metaResult.ids.length;
 
-            const docs: SearchResult[] = result.ids.map((id, i) => {
-                const metadata = (result.metadatas?.[i] as Record<string, unknown>) || {};
-                return {
+            if (total === 0) return { results: [], total: 0 };
+
+            // Sort by timestamp using only metadata (no content loaded yet)
+            const indexed = metaResult.ids.map((id, i) => {
+                const meta = (metaResult.metadatas?.[i] as Record<string, unknown>) || {};
+                const ts = (meta.updatedAtTs as number) || (meta.createdAtTs as number) || 0;
+                return { id, ts };
+            });
+            indexed.sort((a, b) => b.ts - a.ts);
+
+            // Get only the IDs for the requested page
+            const pageIds = indexed.slice(offset, offset + limit).map(entry => entry.id);
+
+            if (pageIds.length === 0) return { results: [], total };
+
+            // Phase 2: Fetch full content only for the page we need
+            const pageResult = await collection.get({
+                ids: pageIds,
+                include: ['documents', 'metadatas'] as IncludeField[],
+            });
+
+            // Build a lookup to preserve sort order from phase 1
+            const docMap = new Map<string, SearchResult>();
+            pageResult.ids.forEach((id, i) => {
+                const metadata = (pageResult.metadatas?.[i] as Record<string, unknown>) || {};
+                docMap.set(id, {
                     id,
                     source,
-                    content: (metadata._originalContent as string) || result.documents?.[i] || '',
+                    content: (metadata._originalContent as string) || pageResult.documents?.[i] || '',
                     metadata,
                     score: 0,
-                };
+                });
             });
 
-            // Sort by updatedAtTs descending (most recent first)
-            docs.sort((a, b) => {
-                const aTs = (a.metadata.updatedAtTs as number) || (a.metadata.createdAtTs as number) || 0;
-                const bTs = (b.metadata.updatedAtTs as number) || (b.metadata.createdAtTs as number) || 0;
-                return bTs - aTs;
-            });
+            // Return in sorted order
+            const results = pageIds.map(id => docMap.get(id)!).filter(Boolean);
 
-            return {
-                results: docs.slice(offset, offset + limit),
-                total: docs.length,
-            };
+            return { results, total };
         } catch (error) {
             this.logger.warn(`Failed to list documents for ${source}: ${(error as Error).message}`);
             return { results: [], total: 0 };
