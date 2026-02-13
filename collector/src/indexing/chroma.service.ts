@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChromaClient, Collection, EmbeddingFunction } from 'chromadb';
 import type { Where, Metadata } from 'chromadb';
+import { CohereClient } from 'cohere-ai';
 
 type IncludeField = 'documents' | 'metadatas' | 'distances' | 'embeddings' | 'uris';
 import axios from 'axios';
@@ -45,6 +46,7 @@ export class ChromaService implements OnModuleInit {
     private client!: ChromaClient;
     private embeddingFunction: EmbeddingFunction | undefined;
     private collections: Map<DataSource, Collection> = new Map();
+    private cohereClient: CohereClient | null = null;
 
     constructor(private configService: ConfigService) {}
 
@@ -65,6 +67,14 @@ export class ChromaService implements OnModuleInit {
                 this.embeddingFunction = new OpenAIEmbedder(openaiApiKey, embeddingModel);
             } else {
                 this.logger.warn('OPENAI_API_KEY not set - ChromaDB will use default embeddings');
+            }
+
+            const cohereApiKey = this.configService.get<string>('cohere.apiKey');
+            if (cohereApiKey) {
+                this.cohereClient = new CohereClient({ token: cohereApiKey });
+                this.logger.log('Cohere re-ranking client initialized');
+            } else {
+                this.logger.warn('COHERE_API_KEY not set - search re-ranking disabled');
             }
 
             this.logger.log(`ChromaDB client initialized at ${chromaUrl}`);
@@ -351,6 +361,45 @@ export class ChromaService implements OnModuleInit {
         }
     }
 
+    /**
+     * Normalize and preprocess query for better matching.
+     */
+    private normalizeQuery(query: string): string {
+        let normalized = query.trim().replace(/\s+/g, ' ');
+        // Don't modify queries that look like IDs (e.g. PROJ-123, PR #45)
+        if (/^[A-Z]+-\d+$/.test(normalized) || /^#?\d+$/.test(normalized)) {
+            return normalized;
+        }
+        return normalized;
+    }
+
+    /**
+     * Expand query terms for keyword search.
+     * Splits compound terms (hyphenated, camelCase) into individual tokens.
+     */
+    private expandQueryTerms(query: string): string[] {
+        const baseTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 1);
+        const expanded = new Set<string>(baseTerms);
+
+        for (const term of baseTerms) {
+            // Split hyphenated: "authentication-issue" -> "authentication", "issue"
+            if (term.includes('-')) {
+                term.split('-').filter(t => t.length > 1).forEach(t => expanded.add(t));
+            }
+            // Split camelCase: "authIssue" -> "auth", "issue"
+            const camelParts = term.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().split(' ');
+            if (camelParts.length > 1) {
+                camelParts.filter(t => t.length > 1).forEach(t => expanded.add(t));
+            }
+            // Split underscored: "auth_issue" -> "auth", "issue"
+            if (term.includes('_')) {
+                term.split('_').filter(t => t.length > 1).forEach(t => expanded.add(t));
+            }
+        }
+
+        return Array.from(expanded);
+    }
+
     async search(
         query: string,
         options: {
@@ -372,6 +421,8 @@ export class ChromaService implements OnModuleInit {
             startDate,
             endDate,
         } = options;
+
+        query = this.normalizeQuery(query);
 
         const whereClause = this.buildWhereClause(where, startDate, endDate);
         const fetchLimit = limit + offset;
@@ -437,9 +488,12 @@ export class ChromaService implements OnModuleInit {
         // Sort by score descending
         deduped.sort((a, b) => b.score - a.score);
 
+        // Cross-encoder re-ranking for final precision
+        const reranked = await this.rerankResults(query, deduped, limit + offset);
+
         return {
-            results: deduped.slice(offset, offset + limit),
-            total: deduped.length,
+            results: reranked.slice(offset, offset + limit),
+            total: reranked.length,
         };
     }
 
@@ -482,8 +536,8 @@ export class ChromaService implements OnModuleInit {
         limit: number,
         whereClause?: Where,
     ): Promise<SearchResult[]> {
-        // Split query into individual terms for multi-word matching
-        const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 1);
+        // Split query into individual terms for multi-word matching (with expansion)
+        const terms = this.expandQueryTerms(query);
         if (terms.length === 0) return [];
 
         // Build where_document filter — match documents containing all terms
@@ -550,14 +604,17 @@ export class ChromaService implements OnModuleInit {
             if (!resultMap.has(r.id)) resultMap.set(r.id, r);
         }
 
-        // Compute RRF scores and normalize to 0-1
-        const maxRrf = 2 / (k + 1);
+        // Weighted RRF: 70% vector (semantic) + 30% keyword (lexical)
+        const vectorWeight = 0.7;
+        const keywordWeight = 0.3;
+        const maxRrf = vectorWeight / (k + 1) + keywordWeight / (k + 1);
+
         for (const [id, result] of resultMap) {
             let rrfScore = 0;
             const vRank = vectorRank.get(id);
             const kRank = keywordRank.get(id);
-            if (vRank !== undefined) rrfScore += 1 / (k + vRank);
-            if (kRank !== undefined) rrfScore += 1 / (k + kRank);
+            if (vRank !== undefined) rrfScore += vectorWeight / (k + vRank);
+            if (kRank !== undefined) rrfScore += keywordWeight / (k + kRank);
             result.score = rrfScore / maxRrf;
         }
 
@@ -585,43 +642,57 @@ export class ChromaService implements OnModuleInit {
         return parsed;
     }
 
+    /**
+     * BM25-like keyword scoring with TF saturation and length normalization.
+     */
     private computeKeywordScore(content: string, terms: string[]): number {
         const lower = content.toLowerCase();
-        const docLength = lower.length;
+        const docLength = lower.split(/\s+/).length; // word count
+        const avgDocLength = 200; // approximate average
+        const k1 = 1.2;
+        const b = 0.75;
+
+        let score = 0;
         let matchedTerms = 0;
-        let tfSum = 0;
 
         for (const term of terms) {
             let idx = 0;
-            let count = 0;
+            let tf = 0;
             while ((idx = lower.indexOf(term, idx)) !== -1) {
-                count++;
+                tf++;
                 idx += term.length;
             }
-            if (count > 0) {
-                matchedTerms++;
-                // TF with diminishing returns: 1 + log(count)
-                tfSum += 1 + Math.log(count);
-            }
+
+            if (tf === 0) continue;
+            matchedTerms++;
+
+            // IDF approximation: longer/rarer terms weight more
+            const idf = Math.log(1 + (1 / Math.max(0.1, term.length / 10)));
+
+            // BM25 TF saturation with length normalization
+            const tfNorm = (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * (docLength / avgDocLength)));
+
+            score += idf * tfNorm;
         }
 
         if (matchedTerms === 0) return 0;
 
-        // Coverage: fraction of query terms found in the document
+        // Coverage bonus: reward matching all query terms
         const coverage = matchedTerms / terms.length;
-        // Normalized TF: average log-TF per matched term, capped at 1
-        const normalizedTF = Math.min(1, tfSum / matchedTerms / 3);
-        // Length normalization: penalize very long docs where terms appear by chance
-        const lengthFactor = 1 / (1 + Math.log(docLength / 2000));
+        const coverageBonus = coverage === 1.0 ? 1.2 : coverage;
 
-        return coverage * 0.6 + normalizedTF * 0.3 + lengthFactor * 0.1;
+        // Normalize to 0-1
+        const maxPossibleScore = terms.length * 2.0;
+        return Math.min(1, (score * coverageBonus) / maxPossibleScore);
     }
 
     /**
      * Apply post-retrieval relevancy boosts:
      * - relevance_score from connector-specific scoring
-     * - title match boost
-     * - recency boost
+     * - title match boost (widened to 1.4x)
+     * - recency boost (widened to 15%)
+     * - engagement boost (up to 10%)
+     * - ownership boost (up to 12%)
      */
     private applyRelevancyBoosts(results: SearchResult[], query: string): void {
         const queryLower = query.toLowerCase();
@@ -630,40 +701,132 @@ export class ChromaService implements OnModuleInit {
         for (const result of results) {
             let boost = 1.0;
 
-            // 1. Blend with connector relevance_score (stored at indexing time)
-            // Range: 0.3-0.85 typically. Scale to boost multiplier 0.85-1.15
+            // 1. Blend with connector relevance_score
             const relevanceScore = result.metadata.relevance_score as number | undefined;
             if (relevanceScore !== undefined && relevanceScore > 0) {
                 const relevanceBoost = 0.85 + relevanceScore * 0.35;
                 result.score *= relevanceBoost;
             }
 
-            // 2. Title match boost
+            // 2. Title match boost (widened from 1.3x to 1.4x)
             const title = ((result.metadata.title as string) || (result.metadata.subject as string) || '').toLowerCase();
             if (title) {
                 if (title.includes(queryLower)) {
-                    // Exact query appears in title
-                    boost *= 1.3;
+                    boost *= 1.4;
                 } else if (queryTerms.length > 0) {
                     const titleMatchRatio = queryTerms.filter(t => title.includes(t)).length / queryTerms.length;
                     if (titleMatchRatio > 0) {
-                        boost *= 1 + titleMatchRatio * 0.2;
+                        boost *= 1 + titleMatchRatio * 0.25;
                     }
                 }
             }
 
-            // 3. Recency boost using connector-specific half-life decay
-            // Different sources have different time-sensitivity (Slack decays fast, docs slow)
+            // 3. Recency boost (widened from 8% to 15%)
             const dateStr = (result.metadata.updatedAt || result.metadata.date || result.metadata.modifiedAt || result.metadata.timestamp) as string | undefined;
             if (dateStr) {
                 const daysSince = Math.max(0, (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
                 const halfLife = this.getRecencyHalfLife(result.source);
                 const recencyScore = Math.pow(0.5, daysSince / halfLife);
-                // Blend: up to 8% boost for very recent, decays with half-life
-                boost *= 1 + recencyScore * 0.08;
+                boost *= 1 + recencyScore * 0.15;
             }
 
+            // 4. Engagement boost (up to 10%)
+            const engagementBoost = this.computeEngagementBoost(result);
+            boost *= 1 + engagementBoost;
+
+            // 5. Ownership boost (up to 12%)
+            const isOwner = result.metadata.is_owner || result.metadata.is_organizer || result.metadata.is_author;
+            const isAssigned = result.metadata.is_assigned_to_me;
+            if (isOwner) boost *= 1.12;
+            else if (isAssigned) boost *= 1.08;
+
             result.score = Math.min(1, result.score * boost);
+        }
+    }
+
+    /**
+     * Compute engagement boost based on source-specific signals.
+     * Returns a value 0-0.10 (up to 10% boost).
+     */
+    private computeEngagementBoost(result: SearchResult): number {
+        const m = result.metadata;
+
+        switch (result.source) {
+            case 'slack': {
+                const reactions = (m.reactionCount as number) || 0;
+                const mentions = (m.mention_count as number) || 0;
+                const isThread = !!m.threadTs;
+                let engagement = 0;
+                if (reactions > 0) engagement += Math.min(0.04, reactions * 0.01);
+                if (mentions > 0) engagement += Math.min(0.03, mentions * 0.015);
+                if (isThread) engagement += 0.02;
+                return Math.min(0.10, engagement);
+            }
+            case 'jira': {
+                const priority = (m.priority_weight as number) || 1;
+                return Math.min(0.10, (priority - 1) * 0.02);
+            }
+            case 'gmail': {
+                const threadDepth = (m.thread_depth as number) || 1;
+                if (threadDepth > 3) return 0.06;
+                if (threadDepth > 1) return 0.03;
+                return 0;
+            }
+            case 'github': {
+                const labels = m.labels as string;
+                if (labels) {
+                    try {
+                        const parsed = JSON.parse(labels);
+                        if (Array.isArray(parsed) && parsed.length > 0) return 0.04;
+                    } catch { /* ignore */ }
+                }
+                return 0;
+            }
+            case 'confluence': {
+                const labelCount = (m.label_count as number) || 0;
+                return Math.min(0.06, labelCount * 0.02);
+            }
+            default:
+                return 0;
+        }
+    }
+
+    /**
+     * Re-rank search results using Cohere's cross-encoder model.
+     * Blends 80% rerank score + 20% original score to preserve metadata boost signals.
+     */
+    private async rerankResults(
+        query: string,
+        results: SearchResult[],
+        topN: number,
+    ): Promise<SearchResult[]> {
+        if (!this.cohereClient || results.length === 0) return results;
+
+        const candidateCount = Math.min(results.length, 50);
+        const candidates = results.slice(0, candidateCount);
+        const remainder = results.slice(candidateCount);
+
+        try {
+            const response = await this.cohereClient.v2.rerank({
+                model: 'rerank-v3.5',
+                query,
+                documents: candidates.map(r => r.content.slice(0, 4096)),
+                topN: Math.min(topN, candidateCount),
+            });
+
+            const reranked: SearchResult[] = response.results.map(rr => {
+                const original = candidates[rr.index];
+                return {
+                    ...original,
+                    score: rr.relevanceScore * 0.8 + original.score * 0.2,
+                };
+            });
+
+            reranked.sort((a, b) => b.score - a.score);
+            return [...reranked, ...remainder];
+        } catch (error) {
+            this.logger.warn(`Cohere rerank failed, using original ranking: ${(error as Error).message}`);
+            return results;
         }
     }
 
