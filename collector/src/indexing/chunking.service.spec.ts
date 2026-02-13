@@ -1,5 +1,16 @@
 import { ChunkingService } from './chunking.service';
 
+// Mock tiktoken before importing the module under test
+jest.mock('tiktoken', () => ({
+    encoding_for_model: jest.fn().mockReturnValue({
+        encode: jest.fn().mockImplementation((text: string) => {
+            // Simple mock: ~1 token per 4 chars (rough approximation)
+            const len = Math.ceil(text.length / 4);
+            return new Array(len);
+        }),
+    }),
+}));
+
 jest.mock('@langchain/textsplitters', () => {
     const mockCreateDocs = jest.fn();
     const MockSplitter: any = jest.fn().mockImplementation(() => ({
@@ -38,44 +49,48 @@ describe('ChunkingService', () => {
             expect(mockCreateDocuments).not.toHaveBeenCalled();
         });
 
-        it('should return content at exactly 7999 chars as a single chunk', async () => {
-            const content = 'a'.repeat(7999);
+        it('should return content below token threshold as a single chunk', async () => {
+            // 2396 chars / 4 = 599 tokens, below MIN_CONTENT_FOR_CHUNKING (600)
+            const content = 'a'.repeat(2396);
             const result = await service.chunkCode(content, 'file.ts');
             expect(result).toEqual([content]);
         });
 
         it('should use language-aware splitting for known extensions', async () => {
-            const content = 'a'.repeat(8000);
+            // 2400 chars / 4 = 600 tokens, at MIN_CONTENT_FOR_CHUNKING threshold
+            const content = 'a'.repeat(2400);
             const result = await service.chunkCode(content, 'src/app.ts');
 
             expect(RecursiveCharacterTextSplitter.fromLanguage).toHaveBeenCalledWith('js', {
-                chunkSize: 4000,
-                chunkOverlap: 200,
+                chunkSize: 512,
+                chunkOverlap: 64,
+                lengthFunction: expect.any(Function),
             });
             expect(mockCreateDocuments).toHaveBeenCalledWith([content]);
             expect(result).toEqual(['chunk-1', 'chunk-2']);
         });
 
         it('should detect Python language from .py extension', async () => {
-            const content = 'a'.repeat(8000);
+            const content = 'a'.repeat(2400);
             await service.chunkCode(content, 'script.py');
             expect(RecursiveCharacterTextSplitter.fromLanguage).toHaveBeenCalledWith('python', expect.any(Object));
         });
 
         it('should detect Go language from .go extension', async () => {
-            const content = 'a'.repeat(8000);
+            const content = 'a'.repeat(2400);
             await service.chunkCode(content, 'main.go');
             expect(RecursiveCharacterTextSplitter.fromLanguage).toHaveBeenCalledWith('go', expect.any(Object));
         });
 
         it('should fall back to text chunking for unknown extensions', async () => {
-            const content = 'a'.repeat(8000);
+            const content = 'a'.repeat(2400);
             const result = await service.chunkCode(content, 'data.xyz');
 
             expect(RecursiveCharacterTextSplitter.fromLanguage).not.toHaveBeenCalled();
             expect(RecursiveCharacterTextSplitter).toHaveBeenCalledWith({
-                chunkSize: 4000,
-                chunkOverlap: 200,
+                chunkSize: 512,
+                chunkOverlap: 64,
+                lengthFunction: expect.any(Function),
             });
             expect(result).toEqual(['chunk-1', 'chunk-2']);
         });
@@ -85,23 +100,25 @@ describe('ChunkingService', () => {
                 createDocuments: jest.fn().mockRejectedValue(new Error('Unsupported')),
             });
 
-            const content = 'a'.repeat(8000);
+            const content = 'a'.repeat(2400);
             const result = await service.chunkCode(content, 'file.ts');
 
             expect(RecursiveCharacterTextSplitter).toHaveBeenCalledWith({
-                chunkSize: 4000,
-                chunkOverlap: 200,
+                chunkSize: 512,
+                chunkOverlap: 64,
+                lengthFunction: expect.any(Function),
             });
             expect(result).toEqual(['chunk-1', 'chunk-2']);
         });
 
         it('should pass custom chunk options', async () => {
-            const content = 'a'.repeat(8000);
+            const content = 'a'.repeat(2400);
             await service.chunkCode(content, 'file.ts', { chunkSize: 2000, chunkOverlap: 100 });
 
             expect(RecursiveCharacterTextSplitter.fromLanguage).toHaveBeenCalledWith('js', {
                 chunkSize: 2000,
                 chunkOverlap: 100,
+                lengthFunction: expect.any(Function),
             });
         });
     });
@@ -115,24 +132,26 @@ describe('ChunkingService', () => {
         });
 
         it('should chunk long content using RecursiveCharacterTextSplitter', async () => {
-            const content = 'a'.repeat(8000);
+            const content = 'a'.repeat(2400);
             const result = await service.chunkText(content);
 
             expect(RecursiveCharacterTextSplitter).toHaveBeenCalledWith({
-                chunkSize: 4000,
-                chunkOverlap: 200,
+                chunkSize: 512,
+                chunkOverlap: 64,
+                lengthFunction: expect.any(Function),
             });
             expect(mockCreateDocuments).toHaveBeenCalledWith([content]);
             expect(result).toEqual(['chunk-1', 'chunk-2']);
         });
 
         it('should pass custom options to the splitter', async () => {
-            const content = 'a'.repeat(8000);
+            const content = 'a'.repeat(2400);
             await service.chunkText(content, { chunkSize: 1000, chunkOverlap: 50 });
 
             expect(RecursiveCharacterTextSplitter).toHaveBeenCalledWith({
                 chunkSize: 1000,
                 chunkOverlap: 50,
+                lengthFunction: expect.any(Function),
             });
         });
     });
