@@ -7,6 +7,7 @@ export interface BaseDocument {
     source: DataSource;
     content: string;
     metadata: Record<string, unknown>;
+    preChunked?: { chunks: string[] };
 }
 
 // Jira Document
@@ -177,7 +178,6 @@ export interface CalendarDocument extends BaseDocument {
 // GitHub Document
 export interface GitHubDocument extends BaseDocument {
     source: 'github';
-    preChunked?: { chunks: string[] };
     metadata: {
         id: string;
         source: 'github';
