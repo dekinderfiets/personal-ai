@@ -29,6 +29,7 @@
         "chromadb": "^3.3.0",
         "class-transformer": "^0.5.1",
         "class-validator": "^0.14.3",
+        "cohere-ai": "^7.20.0",
         "crypto-js": "^4.2.0",
         "express": "^5.2.1",
         "google-auth-library": "^10.5.0",
@@ -36,7 +37,8 @@
         "ioredis": "^5.4.1",
         "pdf-parse": "^2.4.5",
         "reflect-metadata": "^0.2.2",
-        "rxjs": "^7.8.2"
+        "rxjs": "^7.8.2",
+        "tiktoken": "^1.0.22"
     },
     "devDependencies": {
         "@nestjs/cli": "^11.0.14",
