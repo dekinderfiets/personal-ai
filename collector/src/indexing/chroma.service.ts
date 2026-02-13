@@ -561,7 +561,10 @@ export class ChromaService implements OnModuleInit {
                 source,
                 content: (metadata._originalContent as string) || results.documents?.[i] || '',
                 metadata,
-                score: this.computeKeywordScore(results.documents?.[i] || '', terms),
+                score: this.computeKeywordScore(
+                    (metadata._originalContent as string) || results.documents?.[i] || '',
+                    terms,
+                ),
             };
         });
     }
@@ -666,8 +669,8 @@ export class ChromaService implements OnModuleInit {
             if (tf === 0) continue;
             matchedTerms++;
 
-            // IDF approximation: longer/rarer terms weight more
-            const idf = Math.log(1 + (1 / Math.max(0.1, term.length / 10)));
+            // IDF approximation: longer, more specific terms should have higher weight
+            const idf = Math.log(1 + Math.min(term.length, 20) / 3);
 
             // BM25 TF saturation with length normalization
             const tfNorm = (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * (docLength / avgDocLength)));
