@@ -184,18 +184,20 @@ export class JiraConnector extends BaseConnector {
                         const commentBody = renderedComment ? this.stripHtml(renderedComment.body) :
                             (typeof comment.body === 'string' ? comment.body : 'JSON content');
 
+                        const commentAuthor = comment.author?.displayName || 'Unknown';
+
                         documents.push({
                             id: `${issue.key}_comment_${comment.id}`,
                             source: 'jira',
-                            content: `Comment on ${issue.key} by ${comment.author.displayName}:\n${commentBody}`,
+                            content: `Comment on ${issue.key} by ${commentAuthor}:\n${commentBody}`,
                             metadata: {
                                 id: `${issue.key}_comment_${comment.id}`,
                                 source: 'jira',
                                 type: 'comment',
-                                title: `Comment on ${issue.key} by ${comment.author.displayName}`,
+                                title: `Comment on ${issue.key} by ${commentAuthor}`,
                                 parentId: issue.key,
                                 project: issue.fields.project.key,
-                                reporter: comment.author.displayName,
+                                reporter: commentAuthor,
                                 createdAt: comment.created,
                                 updatedAt: comment.updated,
                                 url: `${this.baseUrl}/browse/${issue.key}?focusedCommentId=${comment.id}`,
@@ -376,18 +378,20 @@ export class JiraConnector extends BaseConnector {
                     const commentBody = renderedComment ? this.stripHtml(renderedComment.body) :
                         (typeof comment.body === 'string' ? comment.body : 'JSON content');
 
+                    const commentAuthor = comment.author?.displayName || 'Unknown';
+
                     documents.push({
                         id: `${issue.key}_comment_${comment.id}`,
                         source: 'jira',
-                        content: `Comment on ${issue.key} by ${comment.author.displayName}:\n${commentBody}`,
+                        content: `Comment on ${issue.key} by ${commentAuthor}:\n${commentBody}`,
                         metadata: {
                             id: `${issue.key}_comment_${comment.id}`,
                             source: 'jira',
                             type: 'comment',
-                            title: `Comment on ${issue.key} by ${comment.author.displayName}`,
+                            title: `Comment on ${issue.key} by ${commentAuthor}`,
                             parentId: issue.key,
                             project: issue.fields.project.key,
-                            reporter: comment.author.displayName,
+                            reporter: commentAuthor,
                             createdAt: comment.created,
                             updatedAt: comment.updated,
                             url: `${this.baseUrl}/browse/${issue.key}?focusedCommentId=${comment.id}`,
