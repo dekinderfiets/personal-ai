@@ -274,6 +274,14 @@ const Dashboard: React.FC = () => {
   const triggerIndexing = async (source: string, extraBody?: Record<string, unknown>) => {
     setIndexingStatus((prev) => ({ ...prev, [source]: true }));
     setError(null);
+    // Dismiss per-card error for the source(s) being collected
+    setStatuses((prev) =>
+      prev.map((s) =>
+        source === 'all' || s.source === source
+          ? { ...s, lastError: undefined, lastErrorAt: undefined }
+          : s,
+      ),
+    );
     try {
       const endpoint =
         source === 'all' ? `${API_BASE_URL}/index/all` : `${API_BASE_URL}/index/${source}`;
