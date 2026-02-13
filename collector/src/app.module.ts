@@ -37,6 +37,7 @@ import {
     chromaConfig,
     temporalConfig,
     openaiConfig,
+    cohereConfig,
 } from './config/config';
 import { validate } from './config/validation';
 
@@ -59,6 +60,7 @@ import { ChunkingService } from './indexing/chunking.service';
                 chromaConfig,
                 temporalConfig,
                 openaiConfig,
+                cohereConfig,
             ],
         }),
         ...(existsSync(join(__dirname, '..', 'public'))

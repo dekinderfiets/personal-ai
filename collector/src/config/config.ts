@@ -62,6 +62,10 @@ export const openaiConfig = registerAs('openai', () => ({
     embeddingModel: process.env.OPENAI_EMBEDDING_MODEL || '',
 }));
 
+export const cohereConfig = registerAs('cohere', () => ({
+    apiKey: process.env.COHERE_API_KEY || '',
+}));
+
 export const temporalConfig = registerAs('temporal', () => ({
     address: process.env.TEMPORAL_ADDRESS,
     namespace: process.env.TEMPORAL_NAMESPACE || 'default',
