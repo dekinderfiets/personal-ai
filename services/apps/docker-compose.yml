@@ -1,5 +1,5 @@
 services:
-  # Requires redis and chroma from infra compose
+  # Requires redis and elasticsearch from infra compose
   nocodb:
     image: nocodb/nocodb:latest
     container_name: nocodb_app
@@ -11,7 +11,7 @@ services:
     volumes:
       - nocodb_data:/usr/app/data
     restart: unless-stopped
-  # Requires redis and chroma from infra compose
+  # Requires redis and elasticsearch from infra compose
   collector:
     build:
       context: collector
@@ -24,7 +24,7 @@ services:
     env_file: collector/.env
     environment:
       REDIS_HOST: redis
-      CHROMA_URL: http://chroma:8000
+      ELASTICSEARCH_URL: http://elasticsearch:9200
     volumes:
       - ./collector/src:/app/src
       - ./collector/tsconfig.json:/app/tsconfig.json

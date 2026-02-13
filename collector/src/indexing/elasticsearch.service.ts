@@ -39,7 +39,7 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
     constructor(private configService: ConfigService) {}
 
     async onModuleDestroy() {
-        await this.redis.quit();
+        if (this.redis) await this.redis.quit();
     }
 
     async onModuleInit() {
@@ -585,9 +585,9 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
                             {
                                 exp: {
                                     updatedAtTs: {
-                                        origin: Date.now().toString(),
-                                        scale: '2592000000',
-                                        offset: '604800000',
+                                        origin: Date.now(),
+                                        scale: 2592000000,
+                                        offset: 604800000,
                                         decay: 0.5,
                                     },
                                 },
@@ -639,9 +639,9 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
                                 {
                                     exp: {
                                         updatedAtTs: {
-                                            origin: Date.now().toString(),
-                                            scale: '2592000000',
-                                            offset: '604800000',
+                                            origin: Date.now(),
+                                            scale: 2592000000,
+                                            offset: 604800000,
                                             decay: 0.5,
                                         },
                                     },
@@ -653,14 +653,12 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
                     },
                 },
                 {
-                    query: {
-                        knn: {
-                            field: 'embedding',
-                            query_vector: queryEmbedding,
-                            k: 200,
-                            num_candidates: 400,
-                            ...(filterClause ? { filter: filterClause } : {}),
-                        },
+                    knn: {
+                        field: 'embedding',
+                        query_vector: queryEmbedding,
+                        k: 200,
+                        num_candidates: 400,
+                        ...(filterClause ? { filter: filterClause } : {}),
                     },
                 },
             ],
@@ -746,7 +744,7 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
 
     /**
      * Stage 3: Weighted linear personalization.
-     * final = 0.55*semantic + 0.20*recency + 0.10*ownership + 0.05*engagement + 0.10*connector
+     * final = semantic * (1 + 0.20*recency + 0.10*ownership + 0.05*engagement + 0.10*connector)
      */
     private applyPersonalization(results: SearchResult[]): void {
         for (const result of results) {
@@ -774,7 +772,7 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
             // Connector relevance
             const connector = (result.metadata.relevance_score as number) || 0;
 
-            result.score = 0.55 * semantic + 0.20 * recency + 0.10 * ownership + 0.05 * engagement + 0.10 * connector;
+            result.score = semantic * (1 + 0.20 * recency + 0.10 * ownership + 0.05 * engagement + 0.10 * connector);
         }
     }
 
@@ -804,6 +802,11 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
             case 'confluence': {
                 const labelCount = (m.label_count as number) || 0;
                 return Math.min(1, labelCount * 0.15);
+            }
+            case 'github': {
+                const reactions = (m.reactionCount as number) || 0;
+                const labels = (m.label_count as number) || 0;
+                return Math.min(1, reactions * 0.1 + labels * 0.1);
             }
             default:
                 return 0;

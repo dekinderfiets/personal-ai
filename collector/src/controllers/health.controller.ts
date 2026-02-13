@@ -24,7 +24,7 @@ export class HealthController {
         } catch (e) {}
 
         try {
-            const esUrl = this.configService.get<string>('elasticsearch.url');
+            const esUrl = this.configService.get<string>('elasticsearch.node');
             await axios.get(`${esUrl}/_cluster/health`);
             elasticsearchStatus = 'up';
         } catch (e) {}

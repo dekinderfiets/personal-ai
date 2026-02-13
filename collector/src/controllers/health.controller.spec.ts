@@ -14,7 +14,7 @@ describe('HealthController', () => {
 
     beforeEach(() => {
         mockConfigService = {
-            get: jest.fn().mockReturnValue('http://localhost:8001'),
+            get: jest.fn().mockReturnValue('http://localhost:9200'),
         };
         mockCursorService = {
             redis: { ping: jest.fn() },

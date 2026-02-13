@@ -837,6 +837,8 @@ describe('ElasticsearchService', () => {
             const body = searchCall.body;
             expect(body).toHaveProperty('sub_searches');
             expect(body.sub_searches).toEqual(expect.any(Array));
+            expect(body.sub_searches[1]).toHaveProperty('knn');
+            expect(body.sub_searches[1]).not.toHaveProperty('query');
             expect(body).toHaveProperty('rank');
             expect(body.rank).toHaveProperty('rrf');
         });
@@ -892,7 +894,7 @@ describe('ElasticsearchService', () => {
             // boosted = 0.8 * 1.0549 ~ 0.8439
             // After personalization: 0.55 * 0.8439 + 0 (no recency/ownership/engagement/connector) ~ 0.4642
             expect(result.results).toHaveLength(1);
-            expect(result.results[0].score).toBeCloseTo(0.55 * 0.8 * (1 + Math.min(Math.log(3) * 0.05, 0.15)), 2);
+            expect(result.results[0].score).toBeCloseTo(0.8 * (1 + Math.min(Math.log(3) * 0.05, 0.15)), 2);
         });
 
         it('should apply offset and limit pagination after scoring', async () => {
@@ -1120,6 +1122,56 @@ describe('ElasticsearchService', () => {
             expect(boosted!.score).toBeGreaterThan(plain!.score);
 
             jest.restoreAllMocks();
+        });
+    });
+
+    // ─── computeEngagementScore ──────────────────────────────────────────
+
+    describe('computeEngagementScore', () => {
+        const engagementScore = (result: SearchResult) =>
+            (service as any).computeEngagementScore(result);
+
+        it('should compute github engagement from reactions and labels', () => {
+            const result: SearchResult = {
+                id: 'gh-1',
+                source: 'github' as DataSource,
+                content: 'PR content',
+                metadata: { reactionCount: 3, label_count: 2 },
+                score: 0.8,
+            };
+            // 3 * 0.1 + 2 * 0.1 = 0.5
+            expect(engagementScore(result)).toBeCloseTo(0.5, 2);
+        });
+
+        it('should cap github engagement at 1', () => {
+            const result: SearchResult = {
+                id: 'gh-2',
+                source: 'github' as DataSource,
+                content: 'PR content',
+                metadata: { reactionCount: 10, label_count: 5 },
+                score: 0.8,
+            };
+            expect(engagementScore(result)).toBe(1);
+        });
+
+        it('should return 0 for github with no reactions or labels', () => {
+            const result: SearchResult = {
+                id: 'gh-3',
+                source: 'github' as DataSource,
+                content: 'PR content',
+                metadata: {},
+                score: 0.8,
+            };
+            expect(engagementScore(result)).toBe(0);
+        });
+    });
+
+    // ─── onModuleDestroy ──────────────────────────────────────────────
+
+    describe('onModuleDestroy', () => {
+        it('should not throw when redis is undefined', async () => {
+            (service as any).redis = undefined;
+            await expect(service.onModuleDestroy()).resolves.not.toThrow();
         });
     });
 
