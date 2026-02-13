@@ -265,6 +265,33 @@ describe('GitHubConnector', () => {
             });
         });
 
+        it('should respect request.indexFiles even when cursor has stale value', async () => {
+            // Simulate cursor from a previous run where indexFiles was false
+            const staleState = {
+                phase: 'issues',
+                repoIdx: 0,
+                page: 1,
+                repos: ['testuser/repo1'],
+                repoDefaultBranches: { 'testuser/repo1': 'main' },
+                indexFiles: false,
+            };
+
+            // Mock issues response with no more pages
+            mockApiGet.mockResolvedValueOnce({
+                data: [], // no issues
+            });
+
+            const result = await connector.fetch(
+                { source: 'github' as const, lastSync: '', syncToken: JSON.stringify(staleState) },
+                { indexFiles: true },
+            );
+
+            // Should transition to files phase, not skip it
+            const newState = JSON.parse(result.newCursor.syncToken!);
+            expect(newState.phase).toBe('files');
+            expect(newState.indexFiles).toBe(true);
+        });
+
         describe('phase: files', () => {
             const makeFilesState = () => JSON.stringify({
                 phase: 'files',

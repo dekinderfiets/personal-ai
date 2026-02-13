@@ -120,9 +120,9 @@ const SKIP_FILENAMES = new Set([
 ]);
 
 const MAX_FILE_SIZE = 512 * 1024; // 512KB
-const MAX_FILES_PER_REPO = 500;
 const FILE_FETCH_BATCH_SIZE = 5;
 const FILE_FETCH_BATCH_DELAY = 200;
+const FILES_PER_CURSOR_BATCH = 50;
 
 @Injectable()
 export class GitHubConnector extends BaseConnector {
@@ -171,6 +171,7 @@ export class GitHubConnector extends BaseConnector {
             repos: string[];
             repoDefaultBranches: Record<string, string>;
             indexFiles?: boolean;
+            fileOffset?: number;
         };
 
         if (cursor?.syncToken) {
@@ -182,6 +183,9 @@ export class GitHubConnector extends BaseConnector {
         } else {
             state = { phase: 'repos', repoIdx: 0, page: 1, repos: [], repoDefaultBranches: {} };
         }
+
+        // Always respect the current request's indexFiles setting over stale cursor state
+        state.indexFiles = request.indexFiles !== false;
 
         const since = cursor?.lastSync && !request.fullReindex ? cursor.lastSync : undefined;
 
@@ -267,22 +271,29 @@ export class GitHubConnector extends BaseConnector {
         // Phase 3: Fetch file contents from repository
         if (state.phase === 'files') {
             const branch = state.repoDefaultBranches[repoFullName] || 'main';
-            const fileDocs = await this.fetchRepoFiles(repoFullName, branch);
+            const { documents: fileDocs, hasMore: moreFiles, nextOffset } =
+                await this.fetchRepoFiles(repoFullName, branch, state.fileOffset || 0);
             documents.push(...fileDocs);
 
-            this.logger.log(`Indexed ${fileDocs.length} files from ${repoFullName}`);
+            this.logger.log(`Indexed ${fileDocs.length} files from ${repoFullName} (offset ${state.fileOffset || 0})`);
 
-            // Move to next repo
-            state.repoIdx++;
-            state.phase = 'issues';
-            state.page = 1;
-
-            const hasMore = state.repoIdx < state.repos.length;
-            if (!hasMore) {
-                state.phase = 'repos';
-                state.repoIdx = 0;
+            if (moreFiles) {
+                // More files in this repo
+                state.fileOffset = nextOffset;
+            } else {
+                // Done with this repo's files, move to next repo
+                state.repoIdx++;
+                state.phase = 'issues';
                 state.page = 1;
+                state.fileOffset = 0;
+
+                if (state.repoIdx >= state.repos.length) {
+                    state.phase = 'repos';
+                    state.repoIdx = 0;
+                }
             }
+
+            const hasMore = state.phase !== 'repos' || moreFiles;
 
             return {
                 documents,
@@ -569,7 +580,11 @@ export class GitHubConnector extends BaseConnector {
     // File indexing
     // ----------------------------------------------------------------
 
-    private async fetchRepoFiles(repoFullName: string, branch: string): Promise<GitHubDocument[]> {
+    private async fetchRepoFiles(
+        repoFullName: string,
+        branch: string,
+        offset: number = 0,
+    ): Promise<{ documents: GitHubDocument[]; hasMore: boolean; nextOffset: number }> {
         const [owner, repo] = repoFullName.split('/');
         const documents: GitHubDocument[] = [];
 
@@ -588,16 +603,19 @@ export class GitHubConnector extends BaseConnector {
             // Filter to indexable files
             const candidateFiles = tree
                 .filter(item => item.type === 'blob')
-                .filter(item => this.isIndexableFile(item))
-                .slice(0, MAX_FILES_PER_REPO);
+                .filter(item => this.isIndexableFile(item));
 
-            this.logger.log(`Found ${candidateFiles.length} indexable files (from ${tree.length} total) in ${repoFullName}`);
+            const batch = candidateFiles.slice(offset, offset + FILES_PER_CURSOR_BATCH);
+
+            this.logger.log(
+                `Fetching files ${offset + 1}-${offset + batch.length} of ${candidateFiles.length} in ${repoFullName}`,
+            );
 
             // Fetch file contents in batches
-            for (let i = 0; i < candidateFiles.length; i += FILE_FETCH_BATCH_SIZE) {
-                const batch = candidateFiles.slice(i, i + FILE_FETCH_BATCH_SIZE);
+            for (let i = 0; i < batch.length; i += FILE_FETCH_BATCH_SIZE) {
+                const chunk = batch.slice(i, i + FILE_FETCH_BATCH_SIZE);
                 const batchResults = await Promise.allSettled(
-                    batch.map(item => this.fetchFileContent(repoFullName, item, owner, repo, branch)),
+                    chunk.map(item => this.fetchFileContent(repoFullName, item, owner, repo, branch)),
                 );
 
                 for (const result of batchResults) {
@@ -607,15 +625,19 @@ export class GitHubConnector extends BaseConnector {
                 }
 
                 // Rate limiting delay between batches
-                if (i + FILE_FETCH_BATCH_SIZE < candidateFiles.length) {
+                if (i + FILE_FETCH_BATCH_SIZE < batch.length) {
                     await new Promise(resolve => setTimeout(resolve, FILE_FETCH_BATCH_DELAY));
                 }
             }
+
+            const nextOffset = offset + FILES_PER_CURSOR_BATCH;
+            const hasMore = nextOffset < candidateFiles.length;
+
+            return { documents, hasMore, nextOffset };
         } catch (error) {
             this.logger.error(`Failed to fetch file tree for ${repoFullName}: ${(error as Error).message}`);
+            return { documents, hasMore: false, nextOffset: offset };
         }
-
-        return documents;
     }
 
     private isIndexableFile(item: GitHubTreeItem): boolean {
