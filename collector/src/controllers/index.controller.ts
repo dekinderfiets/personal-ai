@@ -23,6 +23,23 @@ export class IndexController {
         return this.indexingService.indexAll(request);
     }
 
+    @Get('enabled-sources')
+    async getEnabledSources(): Promise<DataSource[]> {
+        return this.settingsService.getEnabledSources();
+    }
+
+    @Post('enabled-sources/:source')
+    async setSourceEnabled(
+        @Param('source') source: string,
+        @Body() body: { enabled: boolean },
+    ): Promise<{ message: string }> {
+        if (!VALID_SOURCES.includes(source as DataSource)) {
+            throw new HttpException(`Invalid source: ${source}`, HttpStatus.BAD_REQUEST);
+        }
+        await this.settingsService.setSourceEnabled(source as DataSource, body.enabled);
+        return { message: `Source ${source} ${body.enabled ? 'enabled' : 'disabled'}` };
+    }
+
     @Post(':source')
     async triggerIndexing(
         @Param('source') source: string,
@@ -30,6 +47,11 @@ export class IndexController {
     ): Promise<IndexResponse> {
         if (!VALID_SOURCES.includes(source as DataSource)) {
             throw new HttpException(`Invalid source: ${source}. Valid sources: ${VALID_SOURCES.join(', ')}`, HttpStatus.BAD_REQUEST);
+        }
+
+        const enabled = await this.settingsService.isSourceEnabled(source as DataSource);
+        if (!enabled) {
+            throw new HttpException(`Source ${source} is disabled`, HttpStatus.FORBIDDEN);
         }
 
         const result = await this.indexingService.startIndexing(source as DataSource, request);
@@ -51,11 +73,13 @@ export class IndexController {
         if (!VALID_SOURCES.includes(source as DataSource)) {
             throw new HttpException(`Invalid source: ${source}`, HttpStatus.BAD_REQUEST);
         }
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- legacy endpoint kept for backwards compat
         return this.indexingService.getStatus(source as DataSource);
     }
 
     @Get('status')
     async getAllStatus(): Promise<IndexStatus[]> {
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- legacy endpoint kept for backwards compat
         return this.indexingService.getAllStatus();
     }
 
@@ -120,33 +144,46 @@ export class IndexController {
 
     // --- Discovery Endpoints ---
 
+    private async ensureSourceEnabled(source: DataSource): Promise<void> {
+        const enabled = await this.settingsService.isSourceEnabled(source);
+        if (!enabled) {
+            throw new HttpException(`Source ${source} is disabled`, HttpStatus.FORBIDDEN);
+        }
+    }
+
     @Get('discovery/jira/projects')
     async discoverJiraProjects(): Promise<any[]> {
+        await this.ensureSourceEnabled('jira');
         return this.indexingService.getJiraProjects();
     }
 
     @Get('discovery/slack/channels')
     async discoverSlackChannels(): Promise<any[]> {
+        await this.ensureSourceEnabled('slack');
         return this.indexingService.getSlackChannels();
     }
 
     @Get('discovery/drive/folders')
     async discoverDriveFolders(@Query('parentId') parentId?: string): Promise<any[]> {
+        await this.ensureSourceEnabled('drive');
         return this.indexingService.getDriveFolders(parentId);
     }
 
     @Get('discovery/confluence/spaces')
     async discoverConfluenceSpaces(): Promise<any[]> {
+        await this.ensureSourceEnabled('confluence');
         return this.indexingService.getConfluenceSpaces();
     }
 
     @Get('discovery/calendar')
     async discoverCalendars(): Promise<any[]> {
+        await this.ensureSourceEnabled('calendar');
         return this.indexingService.getCalendars();
     }
 
     @Get('discovery/gmail/labels')
     async discoverGmailLabels(): Promise<any[]> {
+        await this.ensureSourceEnabled('gmail');
         return this.indexingService.getGmailLabels();
     }
 

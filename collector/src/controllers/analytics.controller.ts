@@ -22,7 +22,8 @@ export class AnalyticsController {
 
     @Get('stats')
     async getSystemStats(): Promise<SystemStats> {
-        return this.analyticsService.getSystemStats(VALID_SOURCES);
+        const enabledSources = await this.settingsService.getEnabledSources();
+        return this.analyticsService.getSystemStats(enabledSources);
     }
 
     @Get('stats/:source')
@@ -35,7 +36,8 @@ export class AnalyticsController {
 
     @Get('runs')
     async getAllRecentRuns(@Query('limit') limit?: string): Promise<IndexingRun[]> {
-        return this.analyticsService.getAllRecentRuns(VALID_SOURCES, parseInt(limit || '20', 10));
+        const enabledSources = await this.settingsService.getEnabledSources();
+        return this.analyticsService.getAllRecentRuns(enabledSources, parseInt(limit || '20', 10));
     }
 
     @Get('runs/:source')
@@ -64,7 +66,8 @@ export class AnalyticsController {
 
     @Get('health')
     async getAllHealth(): Promise<ConnectorHealth[]> {
-        return this.healthService.checkAllHealth();
+        const enabledSources = await this.settingsService.getEnabledSources();
+        return this.healthService.checkAllHealth(enabledSources);
     }
 
     @Get('health/:source')
@@ -83,14 +86,15 @@ export class AnalyticsController {
         for (const source of VALID_SOURCES) {
             config[source] = await this.settingsService.getSettings(source);
         }
+        const disabledSources = await this.settingsService.getDisabledSources();
 
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Content-Disposition', `attachment; filename=collector-config-${new Date().toISOString().split('T')[0]}.json`);
-        res.send(JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), settings: config }, null, 2));
+        res.send(JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), settings: config, disabledSources }, null, 2));
     }
 
     @Post('config/import')
-    async importConfig(@Body() body: { settings: Record<string, any> }): Promise<{ imported: string[]; skipped: string[] }> {
+    async importConfig(@Body() body: { settings: Record<string, any>; disabledSources?: string[] }): Promise<{ imported: string[]; skipped: string[] }> {
         const imported: string[] = [];
         const skipped: string[] = [];
 
@@ -110,6 +114,11 @@ export class AnalyticsController {
             } else {
                 skipped.push(source);
             }
+        }
+
+        if (body.disabledSources && Array.isArray(body.disabledSources)) {
+            const validDisabled = body.disabledSources.filter(s => VALID_SOURCES.includes(s as DataSource)) as DataSource[];
+            await this.settingsService.setDisabledSources(validDisabled);
         }
 
         return { imported, skipped };

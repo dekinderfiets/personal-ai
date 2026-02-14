@@ -22,6 +22,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import {
   DataSource, SearchResult, ALL_SOURCES, DEFAULT_SEARCH_SOURCES, SOURCE_COLORS, SOURCE_LABELS, DocumentStats,
 } from '../types/api';
+import { useEnabledSources } from '../hooks/useEnabledSources';
 
 const API_BASE_URL = '/api/v1';
 
@@ -81,7 +82,25 @@ const highlightSnippet = (content: string): string => {
 // Main Component
 // ---------------------------------------------------------------------------
 
+// Document type → source mapping
+const DOC_TYPE_SOURCE_MAP: Record<string, DataSource[]> = {
+  issue: ['jira'],
+  comment: ['jira', 'confluence'],
+  message: ['slack'],
+  thread_reply: ['slack'],
+  email: ['gmail'],
+  document: ['drive'],
+  spreadsheet: ['drive'],
+  presentation: ['drive'],
+  pdf: ['drive'],
+  other: ['drive'],
+  page: ['confluence'],
+  blogpost: ['confluence'],
+  event: ['calendar'],
+};
+
 const Documents: React.FC = () => {
+  const { enabledSources } = useEnabledSources();
 
   // Search controls
   const [query, setQuery] = useState('');
@@ -258,6 +277,17 @@ const Documents: React.FC = () => {
     }
   }, [browseMode, browseDocuments, handleSearch, page, query]);
 
+  // Sync selectedSources when enabledSources changes
+  useEffect(() => {
+    setSelectedSources(prev => {
+      const filtered = prev.filter(s => enabledSources.includes(s));
+      // If all were filtered out, use the enabled default search sources
+      return filtered.length > 0
+        ? filtered
+        : DEFAULT_SEARCH_SOURCES.filter(s => enabledSources.includes(s));
+    });
+  }, [enabledSources]);
+
   // On mount: load stats + browse
   useEffect(() => {
     loadStats();
@@ -273,7 +303,7 @@ const Documents: React.FC = () => {
 
   const handleClear = () => {
     setQuery('');
-    setSelectedSources(DEFAULT_SEARCH_SOURCES);
+    setSelectedSources(DEFAULT_SEARCH_SOURCES.filter(s => enabledSources.includes(s)));
     setSearchType('hybrid');
     setLimit(20);
     setStartDate('');
@@ -543,7 +573,7 @@ const Documents: React.FC = () => {
               Sources
             </Typography>
             <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
-              {ALL_SOURCES.map(source => {
+              {ALL_SOURCES.filter(s => enabledSources.includes(s)).map(source => {
                 const isSelected = selectedSources.includes(source);
                 return (
                   <Chip
@@ -677,13 +707,20 @@ const Documents: React.FC = () => {
                   }
                 >
                   <MenuItem value=""><em>Any</em></MenuItem>
-                  <MenuItem value="issue">Issue</MenuItem>
-                  <MenuItem value="message">Message</MenuItem>
-                  <MenuItem value="email">Email</MenuItem>
-                  <MenuItem value="document">Document</MenuItem>
-                  <MenuItem value="page">Page</MenuItem>
-                  <MenuItem value="event">Event</MenuItem>
-                  <MenuItem value="comment">Comment</MenuItem>
+                  {[
+                    { value: 'issue', label: 'Issue' },
+                    { value: 'message', label: 'Message' },
+                    { value: 'email', label: 'Email' },
+                    { value: 'document', label: 'Document' },
+                    { value: 'page', label: 'Page' },
+                    { value: 'event', label: 'Event' },
+                    { value: 'comment', label: 'Comment' },
+                  ].filter(({ value }) => {
+                    const sources = DOC_TYPE_SOURCE_MAP[value];
+                    return !sources || sources.some(s => enabledSources.includes(s));
+                  }).map(({ value, label }) => (
+                    <MenuItem key={value} value={value}>{label}</MenuItem>
+                  ))}
                 </Select>
               </FormControl>
               <Box sx={{ width: 180 }}>

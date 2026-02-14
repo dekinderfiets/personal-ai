@@ -219,6 +219,7 @@ export interface SourceInfo {
     lastErrorAt: string | null;
     workflowId: string | null;
     executionTime: number | null;
+    disabled?: boolean;
 }
 
 export interface IndexResponse {

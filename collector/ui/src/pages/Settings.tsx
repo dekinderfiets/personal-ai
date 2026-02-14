@@ -27,6 +27,7 @@ import {
   DataSource, ALL_SOURCES, SOURCE_LABELS, SOURCE_COLORS, ConnectorSettings,
 } from '../types/api';
 import { useLocalSettings } from '../hooks/useLocalSettings';
+import { useEnabledSources } from '../hooks/useEnabledSources';
 
 const API_BASE_URL = '/api/v1';
 
@@ -59,6 +60,7 @@ const Settings: React.FC = () => {
     return src && ALL_SOURCES.includes(src as DataSource) ? (src as DataSource) : '';
   });
   const { getSettings, updateSettings, applyDateToAll, mergeServerSettings } = useLocalSettings();
+  const { isEnabled, setSourceEnabled } = useEnabledSources();
 
   // Sync selectedSource when navigating to /settings?source=xxx
   useEffect(() => {
@@ -864,8 +866,8 @@ const Settings: React.FC = () => {
         <Paper
           sx={{
             p: 1,
-            width: 200,
-            minWidth: 200,
+            width: 230,
+            minWidth: 230,
             flexShrink: 0,
             position: 'sticky',
             top: 24,
@@ -882,6 +884,7 @@ const Settings: React.FC = () => {
             {ALL_SOURCES.map(source => {
               const isActive = selectedSource === source;
               const configured = isSourceConfigured(source);
+              const enabled = isEnabled(source);
               const color = SOURCE_COLORS[source];
               return (
                 <Box
@@ -897,6 +900,7 @@ const Settings: React.FC = () => {
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
                     position: 'relative',
+                    opacity: enabled ? 1 : 0.5,
                     ...(isActive
                       ? {
                           bgcolor: alpha(color, 0.10),
@@ -918,6 +922,17 @@ const Settings: React.FC = () => {
                         }),
                   }}
                 >
+                  <Switch
+                    size="small"
+                    checked={enabled}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      setSourceEnabled(source, e.target.checked);
+                    }}
+                    sx={{ mr: -0.5 }}
+                  />
+
                   <Box
                     sx={{
                       display: 'flex',
@@ -941,7 +956,7 @@ const Settings: React.FC = () => {
                     {SOURCE_LABELS[source]}
                   </Typography>
 
-                  {configured && (
+                  {enabled && configured && (
                     <CheckCircleIcon
                       sx={{
                         fontSize: 14,
@@ -1035,6 +1050,13 @@ const Settings: React.FC = () => {
               {error && (
                 <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
                   {error}
+                </Alert>
+              )}
+
+              {/* Disabled banner */}
+              {selectedSource && !isEnabled(selectedSource) && (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                  This connector is disabled. It will be excluded from indexing, search, and all dashboards. Toggle the switch in the sidebar to re-enable it.
                 </Alert>
               )}
 

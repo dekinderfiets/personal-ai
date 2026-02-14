@@ -257,9 +257,13 @@ export class IndexingService {
     }
 
     async indexAll(request: IndexRequest = {}): Promise<{ started: DataSource[]; skipped: DataSource[] }> {
-        const result = await this.temporalClient.startCollectAll(request);
+        const enabledSources = await this.settingsService.getEnabledSources();
+        if (enabledSources.length === 0) {
+            return { started: [], skipped: this.allSources };
+        }
+        const result = await this.temporalClient.startCollectAll(request, enabledSources);
         if (result.started) {
-            return { started: this.allSources, skipped: [] };
+            return { started: enabledSources, skipped: this.allSources.filter(s => !enabledSources.includes(s)) };
         }
         return { started: [], skipped: this.allSources };
     }
@@ -368,6 +372,7 @@ export class IndexingService {
 
     async getAllSourceInfo(): Promise<SourceInfo[]> {
         const sources = this.allSources;
+        const disabledSources = await this.settingsService.getDisabledSources();
 
         const results = await Promise.all(
             sources.map(async (source): Promise<SourceInfo> => {
@@ -377,6 +382,7 @@ export class IndexingService {
                 ]);
 
                 const documentsIndexed = redisStatus?.documentsIndexed ?? 0;
+                const disabled = disabledSources.includes(source);
 
                 if (!workflowInfo) {
                     return {
@@ -388,6 +394,7 @@ export class IndexingService {
                         lastErrorAt: null,
                         workflowId: null,
                         executionTime: null,
+                        disabled,
                     };
                 }
 
@@ -415,6 +422,7 @@ export class IndexingService {
                     lastErrorAt: redisStatus?.lastErrorAt ?? null,
                     workflowId: workflowInfo.workflowId,
                     executionTime: workflowInfo.executionTime ?? null,
+                    disabled,
                 };
             }),
         );

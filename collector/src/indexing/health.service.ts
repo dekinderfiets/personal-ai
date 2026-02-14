@@ -60,9 +60,9 @@ export class ConnectorHealthService {
         }
     }
 
-    async checkAllHealth(): Promise<ConnectorHealth[]> {
-        const sources: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar'];
-        return Promise.all(sources.map(s => this.checkHealth(s)));
+    async checkAllHealth(sources?: DataSource[]): Promise<ConnectorHealth[]> {
+        const toCheck = sources || ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar'] as DataSource[];
+        return Promise.all(toCheck.map(s => this.checkHealth(s)));
     }
 
     private async checkJira(startTime: number, checkedAt: string): Promise<ConnectorHealth> {

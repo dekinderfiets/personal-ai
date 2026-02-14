@@ -3,6 +3,7 @@ import { Body, Controller, Get, HttpException, HttpStatus,Param, Post, Query, Us
 import { ApiKeyGuard } from '../auth/api-key.guard';
 import { ElasticsearchService } from '../indexing/elasticsearch.service';
 import { IndexingService } from '../indexing/indexing.service';
+import { SettingsService } from '../indexing/settings.service';
 import { BulkDeleteRequest, BulkDeleteResponse, DataSource, DocumentStats,SearchRequest, SearchResult } from '../types';
 
 const ALL_SOURCES: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar'];
@@ -13,12 +14,18 @@ export class SearchController {
     constructor(
         private elasticsearchService: ElasticsearchService,
         private indexingService: IndexingService,
+        private settingsService: SettingsService,
     ) {}
 
     @Post()
     async search(@Body() body: SearchRequest): Promise<{ results: SearchResult[]; total: number }> {
+        const enabledSources = await this.settingsService.getEnabledSources();
+        const requestedSources = body.sources
+            ? body.sources.filter(s => enabledSources.includes(s))
+            : enabledSources;
+
         return this.elasticsearchService.search(body.query, {
-            sources: body.sources,
+            sources: requestedSources,
             searchType: body.searchType,
             limit: body.limit,
             offset: body.offset,
@@ -33,8 +40,9 @@ export class SearchController {
 
     @Get('documents/stats')
     async documentStats(): Promise<DocumentStats> {
+        const enabledSources = await this.settingsService.getEnabledSources();
         const counts = await Promise.all(
-            ALL_SOURCES.map(async (source) => ({
+            enabledSources.map(async (source) => ({
                 source,
                 count: await this.elasticsearchService.countDocuments(source),
             })),
@@ -77,9 +85,10 @@ export class SearchController {
     ): Promise<{ results: SearchResult[]; total: number }> {
         const limit = limitParam ? parseInt(limitParam, 10) : 20;
         const offset = offsetParam ? parseInt(offsetParam, 10) : 0;
+        const enabledSources = await this.settingsService.getEnabledSources();
         const sources: DataSource[] = sourcesParam
-            ? (sourcesParam.split(',').filter(s => ALL_SOURCES.includes(s as DataSource)) as DataSource[])
-            : ALL_SOURCES;
+            ? (sourcesParam.split(',').filter(s => enabledSources.includes(s as DataSource)) as DataSource[])
+            : enabledSources;
 
         let where: Record<string, unknown> | undefined;
         if (whereParam) {

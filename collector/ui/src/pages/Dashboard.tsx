@@ -435,11 +435,12 @@ const Dashboard: React.FC = () => {
 
   // ---- Computed Values ----
 
-  const totalDocuments = statuses.reduce((sum, s) => sum + s.documentsIndexed, 0);
-  const activeSources = statuses.filter((s) => s.documentsIndexed > 0 || s.status === 'running').length;
-  const errorCount = statuses.filter((s) => s.status === 'failed' || s.status === 'cancelled' || s.lastError).length;
+  const enabledStatuses = statuses.filter((s) => !s.disabled);
+  const totalDocuments = enabledStatuses.reduce((sum, s) => sum + s.documentsIndexed, 0);
+  const activeSources = enabledStatuses.filter((s) => s.documentsIndexed > 0 || s.status === 'running').length;
+  const errorCount = enabledStatuses.filter((s) => s.status === 'failed' || s.status === 'cancelled' || s.lastError).length;
 
-  const lastSyncTime = statuses.reduce<string | null>((latest, s) => {
+  const lastSyncTime = enabledStatuses.reduce<string | null>((latest, s) => {
     if (!s.lastSync) return latest;
     if (!latest) return s.lastSync;
     return new Date(s.lastSync) > new Date(latest) ? s.lastSync : latest;
@@ -503,7 +504,7 @@ const Dashboard: React.FC = () => {
       {loading && statuses.length === 0 && <LinearProgress sx={{ mb: 3 }} />}
 
       {/* Summary Stats Bar */}
-      {statuses.length > 0 && (
+      {enabledStatuses.length > 0 && (
         <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
           <SummaryCard
             icon={<StorageOutlinedIcon fontSize="small" />}
@@ -513,7 +514,7 @@ const Dashboard: React.FC = () => {
           <SummaryCard
             icon={<PowerOutlinedIcon fontSize="small" />}
             label="Active Sources"
-            value={`${activeSources} / ${statuses.length}`}
+            value={`${activeSources} / ${enabledStatuses.length}`}
           />
           <SummaryCard
             icon={<AccessTimeOutlinedIcon fontSize="small" />}
@@ -531,7 +532,7 @@ const Dashboard: React.FC = () => {
       )}
 
       {/* Connector Grid */}
-      {statuses.length > 0 && (
+      {enabledStatuses.length > 0 && (
         <Box
           sx={{
             display: 'grid',
@@ -543,7 +544,7 @@ const Dashboard: React.FC = () => {
             gap: 2,
           }}
         >
-          {statuses.map((status) => {
+          {enabledStatuses.map((status) => {
             const source = status.source as DataSource;
             const sourceColor = SOURCE_COLORS[source] || '#666';
             const isRunning = status.status === 'running';
@@ -783,9 +784,11 @@ const Dashboard: React.FC = () => {
       )}
 
       {/* Empty state */}
-      {statuses.length === 0 && !loading && (
+      {enabledStatuses.length === 0 && !loading && (
         <Alert severity="info">
-          No status information available. Check backend connection.
+          {statuses.length > 0
+            ? 'All connectors are disabled. Enable connectors in Settings.'
+            : 'No status information available. Check backend connection.'}
         </Alert>
       )}
 
