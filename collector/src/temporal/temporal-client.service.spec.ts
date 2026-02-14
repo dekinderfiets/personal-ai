@@ -246,6 +246,47 @@ describe('TemporalClientService', () => {
         });
     });
 
+    describe('getSourceWorkflowInfo', () => {
+        it('should return workflow info for a source with a completed workflow', async () => {
+            const mockIter = {
+                [Symbol.asyncIterator]: async function* () {
+                    yield {
+                        workflowId: 'index-gmail',
+                        runId: 'run-1',
+                        type: 'indexSourceWorkflow',
+                        status: { code: 2 }, // COMPLETED
+                        startTime: new Date('2026-02-14T10:00:00Z'),
+                        closeTime: new Date('2026-02-14T10:05:00Z'),
+                    };
+                },
+            };
+            mockClient.workflow.list.mockReturnValue(mockIter);
+
+            const result = await service.getSourceWorkflowInfo('gmail');
+            expect(result).toEqual({
+                workflowId: 'index-gmail',
+                runId: 'run-1',
+                type: 'indexSourceWorkflow',
+                status: 'COMPLETED',
+                startTime: '2026-02-14T10:00:00.000Z',
+                closeTime: '2026-02-14T10:05:00.000Z',
+                executionTime: 300000,
+            });
+        });
+
+        it('should return null when no workflow exists for a source', async () => {
+            const mockIter = {
+                [Symbol.asyncIterator]: async function* () {
+                    // yields nothing
+                },
+            };
+            mockClient.workflow.list.mockReturnValue(mockIter);
+
+            const result = await service.getSourceWorkflowInfo('gmail');
+            expect(result).toBeNull();
+        });
+    });
+
     describe('cancelWorkflow', () => {
         it('should cancel the workflow via handle', async () => {
             const mockHandle = { cancel: jest.fn().mockResolvedValue(undefined) };
