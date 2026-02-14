@@ -21,6 +21,7 @@ describe('IndexController', () => {
             getJiraProjects: jest.fn(),
             getSlackChannels: jest.fn(),
             getDriveFolders: jest.fn(),
+            getDriveSharedDrives: jest.fn(),
             getConfluenceSpaces: jest.fn(),
             getCalendars: jest.fn(),
             getGmailLabels: jest.fn(),
@@ -232,7 +233,7 @@ describe('IndexController', () => {
         it('discoverDriveFolders delegates with parentId', async () => {
             mockIndexingService.getDriveFolders.mockResolvedValue([]);
             await controller.discoverDriveFolders('parent123');
-            expect(mockIndexingService.getDriveFolders).toHaveBeenCalledWith('parent123');
+            expect(mockIndexingService.getDriveFolders).toHaveBeenCalledWith('parent123', undefined);
         });
 
         it('discoverConfluenceSpaces delegates correctly', async () => {

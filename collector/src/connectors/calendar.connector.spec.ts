@@ -72,6 +72,8 @@ describe('CalendarConnector', () => {
         });
 
         it('should fetch events and produce correct document structure', async () => {
+            // Mock listCalendars returning empty → falls back to 'primary'
+            mockedAxios.get.mockResolvedValueOnce({ data: { items: [] } });
             mockedAxios.get.mockResolvedValueOnce({
                 data: {
                     items: [makeEvent()],
@@ -100,6 +102,8 @@ describe('CalendarConnector', () => {
         });
 
         it('should skip cancelled events', async () => {
+            // Mock listCalendars returning empty → falls back to 'primary'
+            mockedAxios.get.mockResolvedValueOnce({ data: { items: [] } });
             mockedAxios.get.mockResolvedValueOnce({
                 data: {
                     items: [
@@ -165,12 +169,15 @@ describe('CalendarConnector', () => {
         });
 
         it('should retry on 410 error (invalid sync token)', async () => {
+            // Mock listCalendars returning empty → falls back to 'primary'
+            mockedAxios.get.mockResolvedValueOnce({ data: { items: [] } });
+
             const goneError = new Error('Gone') as any;
             goneError.response = { status: 410, data: {} };
             goneError.isAxiosError = true;
             mockedAxios.isAxiosError.mockReturnValue(true);
 
-            // First call throws 410, second succeeds
+            // First events call throws 410, second succeeds
             mockedAxios.get
                 .mockRejectedValueOnce(goneError)
                 .mockResolvedValueOnce({
@@ -188,11 +195,13 @@ describe('CalendarConnector', () => {
             const result = await connector.fetch(cursor, {});
 
             expect(result.documents.length).toBe(1);
-            // Should have called get twice (first failed, second succeeded without syncToken)
-            expect(mockedAxios.get).toHaveBeenCalledTimes(2);
+            // Should have called get three times (listCalendars, first events failed, second events succeeded)
+            expect(mockedAxios.get).toHaveBeenCalledTimes(3);
         });
 
         it('should pick the latest updatedAt for batchLastSync', async () => {
+            // Mock listCalendars returning empty → falls back to 'primary'
+            mockedAxios.get.mockResolvedValueOnce({ data: { items: [] } });
             mockedAxios.get.mockResolvedValueOnce({
                 data: {
                     items: [
@@ -209,17 +218,23 @@ describe('CalendarConnector', () => {
         });
 
         it('should use "primary" calendar when no calendarIds specified', async () => {
+            // Mock listCalendars returning empty → falls back to 'primary'
+            mockedAxios.get.mockResolvedValueOnce({ data: { items: [] } });
+            // Mock the events call
             mockedAxios.get.mockResolvedValueOnce({
                 data: { items: [] },
             });
 
             await connector.fetch(null, {});
 
-            const call = mockedAxios.get.mock.calls[0];
+            // calls[0] is listCalendars, calls[1] is the events call
+            const call = mockedAxios.get.mock.calls[1];
             expect(call[0]).toContain('/calendars/primary/events');
         });
 
         it('should build event content with location and attendees', async () => {
+            // Mock listCalendars returning empty → falls back to 'primary'
+            mockedAxios.get.mockResolvedValueOnce({ data: { items: [] } });
             mockedAxios.get.mockResolvedValueOnce({
                 data: {
                     items: [makeEvent()],

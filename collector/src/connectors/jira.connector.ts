@@ -59,10 +59,10 @@ export class JiraConnector extends BaseConnector {
 
     constructor(private configService: ConfigService) {
         super();
-        this.baseUrl = this.configService.get<string>('jira.baseUrl')!.replace(/\/+$/, '');
+        this.baseUrl = (this.configService.get<string>('jira.baseUrl') || '').replace(/\/+$/, '');
         const username = this.configService.get<string>('jira.username');
         const apiToken = this.configService.get<string>('jira.apiToken');
-        this.sprintFieldId = this.configService.get<string>('jira.sprintFieldId')!;
+        this.sprintFieldId = this.configService.get<string>('jira.sprintFieldId') || 'customfield_10020';
 
         if (this.baseUrl && username && apiToken) {
             const token = Buffer.from(`${username}:${apiToken}`).toString('base64');
