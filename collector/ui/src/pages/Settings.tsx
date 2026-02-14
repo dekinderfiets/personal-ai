@@ -866,8 +866,8 @@ const Settings: React.FC = () => {
         <Paper
           sx={{
             p: 1,
-            width: 230,
-            minWidth: 230,
+            width: 200,
+            minWidth: 200,
             flexShrink: 0,
             position: 'sticky',
             top: 24,
@@ -922,17 +922,6 @@ const Settings: React.FC = () => {
                         }),
                   }}
                 >
-                  <Switch
-                    size="small"
-                    checked={enabled}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => {
-                      e.stopPropagation();
-                      setSourceEnabled(source, e.target.checked);
-                    }}
-                    sx={{ mr: -0.5 }}
-                  />
-
                   <Box
                     sx={{
                       display: 'flex',
@@ -1044,6 +1033,21 @@ const Settings: React.FC = () => {
                 {loadingDiscovery && (
                   <CircularProgress size={18} sx={{ color: theme.palette.text.secondary }} />
                 )}
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={isEnabled(selectedSource)}
+                      onChange={(e) => setSourceEnabled(selectedSource, e.target.checked)}
+                    />
+                  }
+                  label={
+                    <Typography variant="body2" color="text.secondary">
+                      {isEnabled(selectedSource) ? 'Enabled' : 'Disabled'}
+                    </Typography>
+                  }
+                  labelPlacement="start"
+                  sx={{ ml: 1, mr: 0 }}
+                />
               </Box>
 
               {/* Error / Success */}
@@ -1056,7 +1060,7 @@ const Settings: React.FC = () => {
               {/* Disabled banner */}
               {selectedSource && !isEnabled(selectedSource) && (
                 <Alert severity="warning" sx={{ mb: 2 }}>
-                  This connector is disabled. It will be excluded from indexing, search, and all dashboards. Toggle the switch in the sidebar to re-enable it.
+                  This connector is disabled. It will be excluded from indexing, search, and all dashboards.
                 </Alert>
               )}
 
