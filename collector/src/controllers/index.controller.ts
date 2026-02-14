@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpException, HttpStatus, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpException, HttpStatus, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 
 import { ApiKeyGuard } from '../auth/api-key.guard';
 import { IndexingService } from '../indexing/indexing.service';
@@ -28,7 +28,7 @@ export class IndexController {
         return this.settingsService.getEnabledSources();
     }
 
-    @Post('enabled-sources/:source')
+    @Put('sources/:source/enabled')
     async setSourceEnabled(
         @Param('source') source: string,
         @Body() body: { enabled: boolean },

@@ -27,8 +27,8 @@ export function useEnabledSources() {
 
   const setSourceEnabled = useCallback(async (source: DataSource, enabled: boolean) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/index/enabled-sources/${source}`, {
-        method: 'POST',
+      const response = await fetch(`${API_BASE_URL}/index/sources/${source}/enabled`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled }),
       });
