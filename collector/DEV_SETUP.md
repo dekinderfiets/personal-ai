@@ -18,4 +18,4 @@ To use hot reload for the frontend, follow these steps:
    Open `http://localhost:5173/ui/` in your browser.
 
 ## Configuration
-The `dev` script uses `dev.env` for local connections. Ensure your Redis and ChromaDB containers are running.
+The `dev` script uses `dev.env` for local connections. Ensure your Redis container is running.

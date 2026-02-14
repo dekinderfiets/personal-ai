@@ -1,6 +1,6 @@
 # Indexing Service
 
-The Indexing Service is responsible for fetching data from various sources (Jira, Slack, Gmail, Google Drive, Confluence, Calendar) and indexing it into ChromaDB for search and AI retrieval.
+The Indexing Service is responsible for fetching data from various sources (Jira, Slack, Gmail, Google Drive, Confluence, Calendar) and indexing it into Elasticsearch for search and AI retrieval.
 
 ## Setup
 

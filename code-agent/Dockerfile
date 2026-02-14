@@ -21,7 +21,7 @@ RUN apt-get update && \
 # Install Cursor Agent CLI
 RUN curl -fsSL https://cursor.com/install | bash
 
-# Configure MCP for Chroma
+# Configure MCPs
 COPY ./.docker/cursor/mcp.json /root/.cursor/mcp.json
 # Configure Cursor Agent CLI
 COPY ./.docker/cursor/cli-config.json /root/.cursor/cli-config.json
@@ -61,7 +61,7 @@ RUN apt-get update && \
 # Install Cursor Agent CLI
 RUN curl -fsSL https://cursor.com/install | bash
 
-# Configure MCP for Chroma
+# Configure MCPs
 RUN mkdir -p /root/.cursor
 COPY ./.docker/cursor/mcp.json /root/.cursor/mcp.json
 # We will use a CMD that performs runtime substitution.
