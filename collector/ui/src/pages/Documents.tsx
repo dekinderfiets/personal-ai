@@ -847,14 +847,20 @@ const Documents: React.FC = () => {
                         <Box sx={{ flex: 1, minWidth: 0 }}>
                           <Typography
                             variant="subtitle1"
+                            component={typeof result.metadata.url === 'string' ? 'a' : 'span'}
+                            href={typeof result.metadata.url === 'string' ? (result.metadata.url as string) : undefined}
+                            target={typeof result.metadata.url === 'string' ? '_blank' : undefined}
+                            rel={typeof result.metadata.url === 'string' ? 'noopener noreferrer' : undefined}
                             sx={{
                               fontWeight: 600,
                               color: 'primary.main',
-                              cursor: 'pointer',
+                              cursor: typeof result.metadata.url === 'string' ? 'pointer' : 'default',
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
                               whiteSpace: 'nowrap',
-                              '&:hover': { textDecoration: 'underline' },
+                              textDecoration: 'none',
+                              display: 'block',
+                              '&:hover': typeof result.metadata.url === 'string' ? { textDecoration: 'underline' } : {},
                             }}
                           >
                             {getTitle(result)}
