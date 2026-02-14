@@ -248,21 +248,21 @@ describe('TemporalClientService', () => {
 
     describe('getSourceWorkflowInfo', () => {
         it('should return workflow info for a source with a completed workflow', async () => {
-            const mockIter = {
-                [Symbol.asyncIterator]: async function* () {
-                    yield {
-                        workflowId: 'index-gmail',
-                        runId: 'run-1',
-                        type: 'indexSourceWorkflow',
-                        status: { code: 2 }, // COMPLETED
-                        startTime: new Date('2026-02-14T10:00:00Z'),
-                        closeTime: new Date('2026-02-14T10:05:00Z'),
-                    };
-                },
+            const mockHandle = {
+                describe: jest.fn().mockResolvedValue({
+                    workflowId: 'index-gmail',
+                    runId: 'run-1',
+                    type: 'indexSourceWorkflow',
+                    status: { code: 2 }, // COMPLETED
+                    startTime: new Date('2026-02-14T10:00:00Z'),
+                    closeTime: new Date('2026-02-14T10:05:00Z'),
+                }),
             };
-            mockClient.workflow.list.mockReturnValue(mockIter);
+            mockClient.workflow.getHandle.mockReturnValue(mockHandle);
 
             const result = await service.getSourceWorkflowInfo('gmail');
+
+            expect(mockClient.workflow.getHandle).toHaveBeenCalledWith('index-gmail');
             expect(result).toEqual({
                 workflowId: 'index-gmail',
                 runId: 'run-1',
@@ -275,12 +275,10 @@ describe('TemporalClientService', () => {
         });
 
         it('should return null when no workflow exists for a source', async () => {
-            const mockIter = {
-                [Symbol.asyncIterator]: async function* () {
-                    // yields nothing
-                },
+            const mockHandle = {
+                describe: jest.fn().mockRejectedValue(new Error('not found')),
             };
-            mockClient.workflow.list.mockReturnValue(mockIter);
+            mockClient.workflow.getHandle.mockReturnValue(mockHandle);
 
             const result = await service.getSourceWorkflowInfo('gmail');
             expect(result).toBeNull();

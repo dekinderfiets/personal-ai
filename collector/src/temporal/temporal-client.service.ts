@@ -79,7 +79,7 @@ export class TemporalClientService {
     async listRecentWorkflows(limit = 20): Promise<WorkflowInfo[]> {
         const workflows: WorkflowInfo[] = [];
         const iter = this.client.workflow.list({
-            query: `TaskQueue = '${this.taskQueue}' ORDER BY StartTime DESC`,
+            query: `TaskQueue = '${this.taskQueue}'`,
         });
 
         let count = 0;
@@ -123,29 +123,7 @@ export class TemporalClientService {
     }
 
     async getSourceWorkflowInfo(source: string): Promise<WorkflowInfo | null> {
-        try {
-            const iter = this.client.workflow.list({
-                query: `WorkflowId = 'index-${source}' ORDER BY StartTime DESC`,
-            });
-
-            for await (const wf of iter) {
-                return {
-                    workflowId: wf.workflowId,
-                    runId: wf.runId,
-                    type: wf.type,
-                    status: statusName(wf.status.code),
-                    startTime: wf.startTime.toISOString(),
-                    closeTime: wf.closeTime?.toISOString(),
-                    executionTime: wf.closeTime
-                        ? wf.closeTime.getTime() - wf.startTime.getTime()
-                        : undefined,
-                };
-            }
-
-            return null;
-        } catch {
-            return null;
-        }
+        return this.getWorkflowStatus(`index-${source}`);
     }
 
     async isWorkflowRunning(workflowId: string): Promise<boolean> {
