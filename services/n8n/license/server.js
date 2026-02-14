@@ -108,6 +108,8 @@ function wrapLicense(license) {
     return Buffer.from(JSON.stringify(container)).toString('base64');
 }
 
+app.get('/healthz', (req, res) => res.send('ok'));
+
 app.post('/v1/activate', (req, res) => {
     const { reservationId, deviceFingerprint } = req.body;
     console.log(`Request body: ${JSON.stringify(req.body)}`)
