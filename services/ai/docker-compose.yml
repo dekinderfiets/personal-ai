@@ -11,6 +11,7 @@ services:
       - ./code-agent/tsconfig.json:/app/tsconfig.json:cached
       - ./code-agent/tsconfig.app.json:/app/tsconfig.app.json:cached
       - /app/node_modules
+      - ./collector/mcp-server:/opt/collector-mcp:ro
     env_file: services/ai/.env
     ports:
       - "127.0.0.1:8085:8085"
