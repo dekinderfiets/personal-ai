@@ -1,7 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
 import { RecursiveCharacterTextSplitter, SupportedTextSplitterLanguage } from '@langchain/textsplitters';
-import { encoding_for_model } from 'tiktoken';
+import { Injectable, Logger } from '@nestjs/common';
 import * as path from 'path';
+import { encoding_for_model } from 'tiktoken';
 
 const DEFAULT_CHUNK_SIZE = 512;
 const DEFAULT_CHUNK_OVERLAP = 64;
@@ -75,7 +75,7 @@ export class ChunkingService {
         }
 
         const ext = path.extname(filePath).toLowerCase();
-        const language = EXTENSION_TO_LANGUAGE[ext];
+        const language = EXTENSION_TO_LANGUAGE[ext] as SupportedTextSplitterLanguage | undefined;
 
         if (!language) {
             return this.chunkText(content, options);
@@ -127,6 +127,6 @@ export class ChunkingService {
      */
     getLanguage(filePath: string): string | null {
         const ext = path.extname(filePath).toLowerCase();
-        return EXTENSION_TO_LANGUAGE[ext] || null;
+        return (EXTENSION_TO_LANGUAGE[ext] as SupportedTextSplitterLanguage | undefined) ?? null;
     }
 }

@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
-import { CursorService } from './cursor.service';
+
 import { Cursor, DataSource, IndexStatus } from '../types';
+import { CursorService } from './cursor.service';
 
 // In-memory Redis mock that simulates real Redis behavior
 function createRedisMock() {

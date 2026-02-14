@@ -1,8 +1,9 @@
-import { Module, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
-import { ConfigService, ConfigModule } from '@nestjs/config';
+import { Logger,Module, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { ConfigModule,ConfigService } from '@nestjs/config';
 import { ModuleRef } from '@nestjs/core';
-import { TemporalClientService } from './temporal-client.service';
+
 import { createActivities } from './activities';
+import { TemporalClientService } from './temporal-client.service';
 
 @Module({
     imports: [ConfigModule],

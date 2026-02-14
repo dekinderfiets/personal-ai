@@ -6,7 +6,7 @@ jest.mock('@temporalio/activity', () => ({
     },
 }));
 
-import { createActivities, ActivityDeps } from './activities';
+import { ActivityDeps,createActivities } from './activities';
 
 describe('createActivities', () => {
     let deps: {

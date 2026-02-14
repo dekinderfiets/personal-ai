@@ -10,7 +10,7 @@ export class GoogleAuthService {
 
     constructor(private configService: ConfigService) { }
 
-    async getAccessToken(scopes: string[]): Promise<string> {
+    async getAccessToken(_scopes: string[]): Promise<string> {
         if (this.accessToken && Date.now() < this.tokenExpiry) {
             return this.accessToken;
         }

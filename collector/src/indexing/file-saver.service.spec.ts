@@ -1,7 +1,8 @@
 import { ConfigService } from '@nestjs/config';
-import { FileSaverService } from './file-saver.service';
-import { IndexDocument } from '../types';
 import * as fs from 'fs';
+
+import { IndexDocument } from '../types';
+import { FileSaverService } from './file-saver.service';
 
 jest.mock('fs', () => {
     const actual = jest.requireActual('fs');

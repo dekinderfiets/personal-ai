@@ -1,4 +1,5 @@
 import { firstValueFrom, take, toArray } from 'rxjs';
+
 import { EventsController } from './events.controller';
 
 describe('EventsController', () => {

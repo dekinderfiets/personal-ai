@@ -1,18 +1,19 @@
 import { Context } from '@temporalio/activity';
+
+import { AnalyticsService } from '../indexing/analytics.service';
+import { CursorService } from '../indexing/cursor.service';
 import { IndexingService } from '../indexing/indexing.service';
 import { SettingsService } from '../indexing/settings.service';
-import { CursorService } from '../indexing/cursor.service';
-import { AnalyticsService } from '../indexing/analytics.service';
+import { ConnectorResult,IndexDocument, IndexRequest } from '../types';
 import {
     DataSource,
-    SerializableIndexRequest,
-    LoadSettingsResult,
     FetchBatchResult,
+    LoadSettingsResult,
     ProcessBatchResult,
     SerializableCursor,
+    SerializableIndexRequest,
     StatusUpdate,
 } from './types';
-import { IndexDocument, IndexRequest, ConnectorResult } from '../types';
 
 export interface ActivityDeps {
     indexingService: IndexingService;

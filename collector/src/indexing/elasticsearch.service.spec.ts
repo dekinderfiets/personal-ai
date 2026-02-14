@@ -1,7 +1,8 @@
-import { ElasticsearchService } from './elasticsearch.service';
-import { createHash } from 'crypto';
-import { DataSource, SearchResult } from '../types';
 import axios from 'axios';
+import { createHash } from 'crypto';
+
+import { DataSource, SearchResult } from '../types';
+import { ElasticsearchService } from './elasticsearch.service';
 
 // Mock tiktoken before any imports that use it
 jest.mock('tiktoken', () => ({

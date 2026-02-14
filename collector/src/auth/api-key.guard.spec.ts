@@ -1,4 +1,5 @@
 import { UnauthorizedException } from '@nestjs/common';
+
 import { ApiKeyGuard } from './api-key.guard';
 
 function createMockContext(headers: Record<string, string> = {}) {

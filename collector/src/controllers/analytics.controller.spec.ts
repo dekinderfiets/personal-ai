@@ -1,4 +1,5 @@
 import { HttpException } from '@nestjs/common';
+
 import { AnalyticsController } from './analytics.controller';
 
 describe('AnalyticsController', () => {

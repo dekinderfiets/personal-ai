@@ -1,20 +1,21 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as CryptoJS from 'crypto-js';
-import { CursorService } from './cursor.service';
-import { FileSaverService } from './file-saver.service';
-import { ElasticsearchService } from './elasticsearch.service';
+
+import { BaseConnector } from '../connectors/base.connector';
+import { CalendarConnector } from '../connectors/calendar.connector';
+import { ConfluenceConnector } from '../connectors/confluence.connector';
+import { DriveConnector } from '../connectors/drive.connector';
+import { GmailConnector } from '../connectors/gmail.connector';
 import { JiraConnector } from '../connectors/jira.connector';
 import { SlackConnector } from '../connectors/slack.connector';
-import { GmailConnector } from '../connectors/gmail.connector';
-import { DriveConnector } from '../connectors/drive.connector';
-import { ConfluenceConnector } from '../connectors/confluence.connector';
-import { CalendarConnector } from '../connectors/calendar.connector';
-import { DataSource, IndexRequest, IndexStatus, IndexDocument, Cursor, ConnectorResult, SourceSettings } from '../types';
-import { SettingsService } from './settings.service';
-import { AnalyticsService } from './analytics.service';
-import { BaseConnector } from '../connectors/base.connector';
 import { TemporalClientService } from '../temporal/temporal-client.service';
+import { ConnectorResult, Cursor, DataSource, IndexDocument, IndexRequest, IndexStatus, SourceSettings } from '../types';
+import { AnalyticsService } from './analytics.service';
+import { CursorService } from './cursor.service';
+import { ElasticsearchService } from './elasticsearch.service';
+import { FileSaverService } from './file-saver.service';
+import { SettingsService } from './settings.service';
 
 @Injectable()
 export class IndexingService {
@@ -95,13 +96,14 @@ export class IndexingService {
             case 'confluence': return (request.spaceKeys || []).sort().join(',');
             case 'drive': return (request.folderIds || []).sort().join(',');
             case 'calendar': return (request.calendarIds || []).sort().join(',');
-            case 'gmail':
+            case 'gmail': {
                 const g = request.gmailSettings;
                 return JSON.stringify({
                     d: (g?.domains || []).sort(),
                     s: (g?.senders || []).sort(),
                     l: (g?.labels || []).sort()
                 });
+            }
             default: return '';
         }
     }
@@ -124,11 +126,11 @@ export class IndexingService {
 
             switch (source) {
                 case 'gmail':
-                    metadata.recipient_count = ((metadata.to || []).length + (metadata.cc || []).length);
+                    metadata.recipient_count = (((metadata.to || []) as unknown[]).length + ((metadata.cc || []) as unknown[]).length);
                     metadata.is_internal = this.isInternalEmail(metadata.from);
                     // Use connector-provided thread message count if available,
                     // otherwise compute from the batch, or omit entirely
-                    if (metadata.threadMessageCount != null) {
+                    if (metadata.threadMessageCount !== null && metadata.threadMessageCount !== undefined) {
                         metadata.thread_depth = metadata.threadMessageCount;
                     } else if (metadata.threadId && threadCounts?.has(metadata.threadId)) {
                         metadata.thread_depth = threadCounts.get(metadata.threadId);
@@ -186,8 +188,8 @@ export class IndexingService {
             while (retries > 0) {
                 try {
                     // Save files independently (non-blocking for hash updates)
-                    this.fileSaverService.saveDocuments(source, documentsToIndex).catch(err => {
-                        this.logger.warn(`File save failed for ${source} (non-fatal): ${err.message}`);
+                    this.fileSaverService.saveDocuments(source, documentsToIndex).catch((err: unknown) => {
+                        this.logger.warn(`File save failed for ${source} (non-fatal): ${(err as Error).message}`);
                     });
 
                     // Elasticsearch upsert must succeed before we update hashes.
@@ -213,7 +215,7 @@ export class IndexingService {
     }
 
     async updateCursorAfterBatch(source: DataSource, result: ConnectorResult, configKey?: string): Promise<Cursor> {
-        const hasSyncToken = !!result.newCursor?.syncToken;
+        const hasSyncToken = !!result.newCursor.syncToken;
 
         // When pagination is in progress (syncToken present), preserve the
         // original lastSync so the JQL stays identical across pages.  Jira's
@@ -228,9 +230,9 @@ export class IndexingService {
             lastSync: hasSyncToken
                 ? (existingCursor?.lastSync || result.batchLastSync || new Date().toISOString())
                 : (result.batchLastSync || new Date().toISOString()),
-            syncToken: result.newCursor?.syncToken,
+            syncToken: result.newCursor.syncToken,
             metadata: {
-                ...result.newCursor?.metadata,
+                ...result.newCursor.metadata,
                 configKey,
             }
         };
@@ -388,8 +390,8 @@ export class IndexingService {
     async deleteDocument(source: DataSource, documentId: string): Promise<void> {
         await Promise.all([
             this.fileSaverService.deleteDocument(source, documentId),
-            this.elasticsearchService.deleteDocument(source, documentId).catch(err => {
-                this.logger.warn(`Elasticsearch delete failed (non-fatal): ${err.message}`);
+            this.elasticsearchService.deleteDocument(source, documentId).catch((err: unknown) => {
+                this.logger.warn(`Elasticsearch delete failed (non-fatal): ${(err as Error).message}`);
             }),
         ]);
         await this.cursorService.removeDocumentHashes(source, documentId);

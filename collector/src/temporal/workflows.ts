@@ -1,19 +1,19 @@
 import {
-    proxyActivities,
-    sleep,
-    continueAsNew,
     ContinueAsNew,
+    continueAsNew,
     executeChild,
     ParentClosePolicy,
+    proxyActivities,
+    sleep,
 } from '@temporalio/workflow';
 
 import type { Activities } from './activities';
 import type {
-    IndexSourceInput,
-    IndexSourceResult,
     CollectAllInput,
     CollectAllResult,
     DataSource,
+    IndexSourceInput,
+    IndexSourceResult,
 } from './types';
 
 const activities = proxyActivities<Activities>({
@@ -189,13 +189,13 @@ export async function collectAllWorkflow(input: CollectAllInput): Promise<Collec
             executeChild(indexSourceWorkflow, {
                 workflowId: `index-${source}`,
                 args: [{ source, request: input.request }],
-                parentClosePolicy: ParentClosePolicy.PARENT_CLOSE_POLICY_ABANDON,
+                parentClosePolicy: ParentClosePolicy.ABANDON,
             })
                 .then((result) => {
                     started.push(source);
                     return result;
                 })
-                .catch((err) => {
+                .catch((err: unknown) => {
                     if ((err as Error).name === 'WorkflowExecutionAlreadyStartedError') {
                         skipped.push(source);
                         return null;

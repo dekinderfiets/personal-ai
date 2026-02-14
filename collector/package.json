@@ -12,7 +12,13 @@
         "dev:ui": "cd ui && npm run dev",
         "dev:server": "npm run start:dev",
         "dev": "concurrently \"npm run dev:server\" \"npm run dev:ui\"",
-        "test": "jest"
+        "test": "jest",
+        "lint": "eslint 'src/**/*.ts'",
+        "lint:fix": "eslint 'src/**/*.ts' --fix",
+        "prepare": "cd .. && husky collector/.husky"
+    },
+    "lint-staged": {
+        "src/**/*.ts": "eslint --fix"
     },
     "dependencies": {
         "@elastic/elasticsearch": "^8.19.1",
@@ -51,9 +57,14 @@
         "@types/node": "^22.19.8",
         "@types/pdf-parse": "^1.1.5",
         "concurrently": "^9.2.1",
+        "eslint": "^9.39.2",
+        "eslint-plugin-simple-import-sort": "^12.1.1",
+        "husky": "^9.1.7",
         "jest": "^30.2.0",
+        "lint-staged": "^16.2.7",
         "ts-jest": "^29.4.6",
         "ts-node": "^10.9.2",
-        "typescript": "^5.9.3"
+        "typescript": "^5.9.3",
+        "typescript-eslint": "^8.55.0"
     }
 }

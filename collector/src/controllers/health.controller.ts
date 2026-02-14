@@ -1,8 +1,9 @@
 import { Controller, Get } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import axios from 'axios';
+
 import { CursorService } from '../indexing/cursor.service';
 import { TemporalClientService } from '../temporal/temporal-client.service';
-import axios from 'axios';
 
 @Controller('health')
 export class HealthController {
@@ -21,18 +22,18 @@ export class HealthController {
         try {
             const ping = await (this.cursorService as any).redis.ping();
             if (ping === 'PONG') redisStatus = 'up';
-        } catch (e) {}
+        } catch { /* health check – failure means down */ }
 
         try {
             const esUrl = this.configService.get<string>('elasticsearch.node');
             await axios.get(`${esUrl}/_cluster/health`);
             elasticsearchStatus = 'up';
-        } catch (e) {}
+        } catch { /* health check – failure means down */ }
 
         try {
             const healthy = await this.temporalClient.checkHealth();
             temporalStatus = healthy ? 'up' : 'down';
-        } catch (e) {}
+        } catch { /* health check – failure means down */ }
 
         const allUp = redisStatus === 'up' && elasticsearchStatus === 'up' && temporalStatus === 'up';
 

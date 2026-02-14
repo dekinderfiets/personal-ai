@@ -1,8 +1,9 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import axios, { AxiosRequestConfig } from 'axios';
+import axios from 'axios';
+
+import { ConnectorResult, Cursor, DataSource,IndexDocument, IndexRequest } from '../types';
 import { BaseConnector } from './base.connector';
-import { Cursor, IndexRequest, ConnectorResult, IndexDocument, SlackDocument, DataSource } from '../types';
 
 interface SlackMessage {
     ts: string;
@@ -94,7 +95,7 @@ export class SlackConnector extends BaseConnector implements OnModuleInit {
         if (cursor?.syncToken) {
             try {
                 state = JSON.parse(cursor.syncToken);
-            } catch (e) {
+            } catch {
                 state = { channelIdx: 0, latestSeenTs: '0', oldest: '0' };
             }
         } else {

@@ -1,6 +1,7 @@
-import { JiraConnector } from './jira.connector';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+
+import { JiraConnector } from './jira.connector';
 
 jest.mock('axios');
 jest.mock('html-to-text', () => ({

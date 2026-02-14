@@ -1,6 +1,7 @@
-import { ConfluenceConnector } from './confluence.connector';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+
+import { ConfluenceConnector } from './confluence.connector';
 
 jest.mock('axios');
 jest.mock('html-to-text', () => ({

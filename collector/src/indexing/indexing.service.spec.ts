@@ -1,5 +1,5 @@
+import { ConnectorResult,DataSource, IndexDocument, IndexRequest, IndexStatus } from '../types';
 import { IndexingService } from './indexing.service';
-import { DataSource, IndexDocument, IndexRequest, IndexStatus, ConnectorResult } from '../types';
 
 // ---------------------------------------------------------------------------
 // Mock factories

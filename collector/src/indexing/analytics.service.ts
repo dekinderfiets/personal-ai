@@ -1,6 +1,7 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy,OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
+
 import { DataSource } from '../types';
 
 export interface IndexingRun {
@@ -47,7 +48,7 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
 
     constructor(private configService: ConfigService) {}
 
-    async onModuleInit() {
+    onModuleInit() {
         this.redis = new Redis(this.configService.get<string>('redis.url')!);
     }
 
@@ -146,7 +147,7 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
         const statsKey = `${this.STATS_PREFIX}${source}`;
         const existing = await this.redis.get(statsKey);
 
-        let stats: SourceStats = existing
+        const stats: SourceStats = existing
             ? JSON.parse(existing)
             : {
                 source,

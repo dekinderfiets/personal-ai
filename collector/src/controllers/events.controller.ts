@@ -1,5 +1,6 @@
-import { Controller, Sse, UseGuards, Query } from '@nestjs/common';
-import { Observable, interval, switchMap, from, startWith, map } from 'rxjs';
+import { Controller, Query,Sse, UseGuards } from '@nestjs/common';
+import { from, interval, map,Observable, startWith, switchMap } from 'rxjs';
+
 import { ApiKeyGuard } from '../auth/api-key.guard';
 import { IndexingService } from '../indexing/indexing.service';
 

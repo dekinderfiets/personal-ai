@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
+
+import { DataSource, GmailSettings,JiraSettings, SourceSettings } from '../types';
 import { SettingsService } from './settings.service';
-import { DataSource, SourceSettings, JiraSettings, GmailSettings } from '../types';
 
 function createRedisMock() {
     const store = new Map<string, string>();

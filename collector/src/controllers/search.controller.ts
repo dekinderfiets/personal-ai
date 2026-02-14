@@ -1,8 +1,9 @@
-import { Controller, Post, Get, Param, Query, Body, UseGuards, HttpException, HttpStatus } from '@nestjs/common';
+import { Body, Controller, Get, HttpException, HttpStatus,Param, Post, Query, UseGuards } from '@nestjs/common';
+
+import { ApiKeyGuard } from '../auth/api-key.guard';
 import { ElasticsearchService } from '../indexing/elasticsearch.service';
 import { IndexingService } from '../indexing/indexing.service';
-import { ApiKeyGuard } from '../auth/api-key.guard';
-import { DataSource, SearchRequest, SearchResult, BulkDeleteRequest, BulkDeleteResponse, DocumentStats } from '../types';
+import { BulkDeleteRequest, BulkDeleteResponse, DataSource, DocumentStats,SearchRequest, SearchResult } from '../types';
 
 const ALL_SOURCES: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar'];
 
@@ -51,11 +52,11 @@ export class SearchController {
 
         for (const item of body.ids) {
             try {
-                if (!ALL_SOURCES.includes(item.source as DataSource)) {
+                if (!ALL_SOURCES.includes(item.source)) {
                     errors.push({ id: item.id, error: `Invalid source: ${item.source}` });
                     continue;
                 }
-                await this.indexingService.deleteDocument(item.source as DataSource, item.id);
+                await this.indexingService.deleteDocument(item.source, item.id);
                 deleted++;
             } catch (error) {
                 errors.push({ id: item.id, error: (error as Error).message });

@@ -1,8 +1,9 @@
-import { Controller, Post, Get, Delete, Param, Query, Body, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpException, HttpStatus, Param, Post, Query, UseGuards } from '@nestjs/common';
+
+import { ApiKeyGuard } from '../auth/api-key.guard';
 import { IndexingService } from '../indexing/indexing.service';
 import { SettingsService } from '../indexing/settings.service';
 import { DataSource, IndexRequest, IndexResponse, IndexStatus, SourceSettings } from '../types';
-import { ApiKeyGuard } from '../auth/api-key.guard';
 
 const VALID_SOURCES: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar'];
 

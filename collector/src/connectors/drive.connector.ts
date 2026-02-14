@@ -1,10 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import { BaseConnector } from './base.connector';
-import { Cursor, IndexRequest, ConnectorResult, IndexDocument, DriveDocument, DataSource } from '../types';
-import { GoogleAuthService } from './google-auth.service';
+
 import { FileProcessorService } from '../indexing/file-processor.service';
+import { ConnectorResult, Cursor, DataSource,DriveDocument, IndexDocument, IndexRequest } from '../types';
+import { BaseConnector } from './base.connector';
+import { GoogleAuthService } from './google-auth.service';
 
 
 interface DriveFile {
@@ -80,11 +81,11 @@ export class DriveConnector extends BaseConnector {
                 },
             });
 
-            this.logger.debug(`Found ${response.data.files?.length || 0} files to process`);
+            this.logger.debug(`Found ${response.data.files.length} files to process`);
 
             // Process files in small parallel batches to speed up indexing without hitting rate limits
             const BATCH_SIZE = 5;
-            const files = response.data.files || [];
+            const files = response.data.files;
 
             for (let i = 0; i < files.length; i += BATCH_SIZE) {
                 const batch = files.slice(i, i + BATCH_SIZE);
@@ -135,7 +136,7 @@ export class DriveConnector extends BaseConnector {
             const hasMore = !!newPageToken;
 
             // Get the modifiedTime of the last file in this batch for the cursor
-            const lastFile = files[files.length - 1];
+            const lastFile = files[files.length - 1] as DriveFile | undefined;
             const batchLastSync = lastFile ? lastFile.modifiedTime : undefined;
 
             return {
@@ -150,7 +151,7 @@ export class DriveConnector extends BaseConnector {
             };
         } catch (error) {
             if (axios.isAxiosError(error) && error.response?.status === 400) {
-                const errorData = error.response?.data?.error;
+                const errorData = error.response.data?.error;
                 const isPageTokenError =
                     errorData?.errors?.some((e: any) => e.location === 'pageToken') ||
                     errorData?.message?.includes('pageToken');
@@ -263,7 +264,7 @@ export class DriveConnector extends BaseConnector {
                 });
                 path = path ? `${response.data.name}/${path}` : response.data.name;
                 currentId = response.data.parents?.[0];
-            } catch (error) {
+            } catch {
                 this.logger.warn(`Could not resolve parent folder ${currentId}`);
                 break;
             }
@@ -351,7 +352,7 @@ export class DriveConnector extends BaseConnector {
                         },
                     );
 
-                    const subfolders = response.data.files || [];
+                    const subfolders = response.data.files;
                     for (const folder of subfolders) {
                         descendants.push(folder.id);
                         queue.push(folder.id);

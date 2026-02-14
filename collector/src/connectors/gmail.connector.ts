@@ -2,8 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { convert } from 'html-to-text';
+
+import { ConnectorResult, Cursor, DataSource,IndexDocument, IndexRequest } from '../types';
 import { BaseConnector } from './base.connector';
-import { Cursor, IndexRequest, ConnectorResult, IndexDocument, DataSource } from '../types';
 import { GoogleAuthService } from './google-auth.service';
 
 interface GmailMessage {
@@ -62,7 +63,7 @@ export class GmailConnector extends BaseConnector {
             if (cursor?.syncToken) {
                 try {
                     state = JSON.parse(cursor.syncToken);
-                } catch (e) {
+                } catch {
                     state = { mode: 'list' };
                 }
             } else if (cursor?.lastSync && !request.fullReindex) {
@@ -180,7 +181,7 @@ export class GmailConnector extends BaseConnector {
             }
 
             // Get the date of the last message in this batch for the cursor
-            const lastDoc = documents[documents.length - 1];
+            const lastDoc = documents[documents.length - 1] as IndexDocument | undefined;
             const batchLastSync = lastDoc ? (lastDoc.metadata as any).date : undefined;
 
             return {
@@ -218,7 +219,7 @@ export class GmailConnector extends BaseConnector {
         const date = getHeader('date');
 
         let body = '';
-        let hasAttachments = false;
+        let _hasAttachments = false;
 
         const extractBody = (parts: any[]) => {
             for (const part of parts) {
@@ -234,7 +235,7 @@ export class GmailConnector extends BaseConnector {
                 if (part.parts) {
                     if (extractBody(part.parts)) return true; // Found plain text in nested part
                 } else if (part.filename) {
-                    hasAttachments = true;
+                    _hasAttachments = true;
                 }
             }
             return false;
@@ -275,7 +276,7 @@ export class GmailConnector extends BaseConnector {
                 from,
                 to,
                 cc,
-                labels: message.labelIds || [],
+                labels: message.labelIds,
                 threadId: message.threadId,
                 date: new Date(date).toISOString(),
                 url: `https://mail.google.com/mail/u/0/#inbox/${message.threadId}`,

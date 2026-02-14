@@ -1,8 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+
+import { ConnectorResult, Cursor, DataSource,IndexDocument, IndexRequest } from '../types';
 import { BaseConnector } from './base.connector';
-import { Cursor, IndexRequest, ConnectorResult, IndexDocument, DataSource } from '../types';
 import { GoogleAuthService } from './google-auth.service';
 
 @Injectable()
@@ -42,8 +43,8 @@ export class CalendarConnector extends BaseConnector {
                 : ['primary'];
 
             // Pagination state from cursor metadata
-            const calendarIndex = cursor?.metadata?.calendarIndex ?? 0;
-            const pageToken = cursor?.metadata?.pageToken;
+            const calendarIndex = (cursor?.metadata?.calendarIndex as number | undefined) ?? 0;
+            const pageToken = cursor?.metadata?.pageToken as string | undefined;
             const calendarId = calendarIdsToFetch[calendarIndex] || calendarIdsToFetch[0];
 
             const params: any = {
@@ -55,7 +56,7 @@ export class CalendarConnector extends BaseConnector {
 
             if (pageToken) {
                 params.pageToken = pageToken;
-            } else if (!request.fullReindex && cursor?.syncToken && !cursor?.metadata?.pageToken) {
+            } else if (!request.fullReindex && cursor?.syncToken && !cursor.metadata?.pageToken) {
                 params.syncToken = cursor.syncToken;
             }
 

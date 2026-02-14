@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+
 import { DataSource } from '../types';
 import { SerializableIndexRequest } from './types';
 

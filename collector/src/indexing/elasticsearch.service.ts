@@ -1,11 +1,12 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Client as EsClient } from '@elastic/elasticsearch';
-import { CohereClient } from 'cohere-ai';
-import Redis from 'ioredis';
+import { Injectable, Logger, OnModuleDestroy,OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import { CohereClient } from 'cohere-ai';
 import { createHash } from 'crypto';
+import Redis from 'ioredis';
 import { encoding_for_model } from 'tiktoken';
+
 import { DataSource, IndexDocument, SearchResult } from '../types';
 
 const CHUNK_SIZE_TOKENS = 512;
@@ -39,6 +40,7 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
     constructor(private configService: ConfigService) {}
 
     async onModuleDestroy() {
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- redis may not be initialized if onModuleInit failed
         if (this.redis) await this.redis.quit();
     }
 
@@ -246,31 +248,31 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
 
         switch (source) {
             case 'jira':
-                if (metadata.project) parts.push(`Project: ${metadata.project}`);
-                if (metadata.issueType) parts.push(`Type: ${metadata.issueType}`);
-                if (metadata.status) parts.push(`Status: ${metadata.status}`);
-                if (metadata.priority) parts.push(`Priority: ${metadata.priority}`);
+                if (metadata.project) parts.push(`Project: ${metadata.project as string}`);
+                if (metadata.issueType) parts.push(`Type: ${metadata.issueType as string}`);
+                if (metadata.status) parts.push(`Status: ${metadata.status as string}`);
+                if (metadata.priority) parts.push(`Priority: ${metadata.priority as string}`);
                 break;
             case 'slack':
-                if (metadata.channel) parts.push(`Channel: #${metadata.channel}`);
-                if (metadata.author) parts.push(`Author: ${metadata.author}`);
+                if (metadata.channel) parts.push(`Channel: #${metadata.channel as string}`);
+                if (metadata.author) parts.push(`Author: ${metadata.author as string}`);
                 if (metadata.threadTs) parts.push('(thread reply)');
                 break;
             case 'gmail':
-                if (metadata.from) parts.push(`From: ${metadata.from}`);
-                if (metadata.subject) parts.push(`Subject: ${metadata.subject}`);
+                if (metadata.from) parts.push(`From: ${metadata.from as string}`);
+                if (metadata.subject) parts.push(`Subject: ${metadata.subject as string}`);
                 break;
             case 'drive':
-                if (metadata.folderPath) parts.push(`Path: ${metadata.folderPath}`);
-                if (metadata.mimeType) parts.push(`Type: ${metadata.mimeType}`);
+                if (metadata.folderPath) parts.push(`Path: ${metadata.folderPath as string}`);
+                if (metadata.mimeType) parts.push(`Type: ${metadata.mimeType as string}`);
                 break;
             case 'confluence':
-                if (metadata.space) parts.push(`Space: ${metadata.spaceName || metadata.space}`);
+                if (metadata.space) parts.push(`Space: ${(metadata.spaceName || metadata.space) as string}`);
                 if (metadata.type === 'comment') parts.push('(page comment)');
                 break;
             case 'calendar':
-                if (metadata.start) parts.push(`When: ${metadata.start}`);
-                if (metadata.location) parts.push(`Location: ${metadata.location}`);
+                if (metadata.start) parts.push(`When: ${metadata.start as string}`);
+                if (metadata.location) parts.push(`Location: ${metadata.location as string}`);
                 break;
         }
 
@@ -312,7 +314,7 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
     }
 
     private normalizeQuery(query: string): string {
-        let normalized = query.trim().replace(/\s+/g, ' ');
+        const normalized = query.trim().replace(/\s+/g, ' ');
         // Don't modify queries that look like IDs (e.g. PROJ-123, PR #45)
         if (/^[A-Z]+-\d+$/.test(normalized) || /^#?\d+$/.test(normalized)) {
             return normalized;
@@ -385,8 +387,8 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
                     _source: ['_contentHash'],
                 });
                 for (const doc of response.docs) {
-                    if ((doc as any).found && (doc as any)._source?._contentHash) {
-                        existingHashes.set(doc._id, (doc as any)._source._contentHash);
+                    if ((doc).found && (doc)._source?._contentHash) {
+                        existingHashes.set(doc._id, (doc)._source._contentHash);
                     }
                 }
             } catch {
@@ -500,7 +502,7 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
         });
 
         const hits = (esResponse.hits?.hits || []) as any[];
-        let allResults: SearchResult[] = hits.map(hit => this.hitToSearchResult(hit));
+        const allResults: SearchResult[] = hits.map(hit => this.hitToSearchResult(hit));
 
         // Stage 2: Chunk dedup + Cohere reranking
         // Dedup: keep best chunk per parentDocId
@@ -532,7 +534,7 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
         deduped.sort((a, b) => b.score - a.score);
 
         // Cohere reranking
-        let reranked = await this.rerankResults(normalizedQuery, deduped, fetchLimit);
+        const reranked = await this.rerankResults(normalizedQuery, deduped, fetchLimit);
 
         // Stage 3: Weighted linear personalization
         this.applyPersonalization(reranked);
@@ -844,7 +846,7 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
 
             const hits = (response.hits?.hits || []) as any[];
             const total = typeof response.hits?.total === 'object'
-                ? (response.hits.total as any).value
+                ? (response.hits.total).value
                 : response.hits?.total || 0;
 
             const results = hits.map(hit => this.hitToSearchResult(hit));
@@ -880,7 +882,7 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
 
             if (!response.found) return null;
 
-            const src = (response as any)._source;
+            const src = (response)._source;
             return {
                 id: response._id,
                 source: src.source || source,

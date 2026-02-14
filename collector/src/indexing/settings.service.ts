@@ -1,6 +1,7 @@
-import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import { Injectable, Logger,OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
+
 import { DataSource, SourceSettings } from '../types';
 
 @Injectable()
@@ -11,7 +12,7 @@ export class SettingsService implements OnModuleInit, OnModuleDestroy {
 
     constructor(private configService: ConfigService) { }
 
-    async onModuleInit() {
+    onModuleInit() {
         this.redis = new Redis(this.configService.get<string>('redis.url')!);
     }
 

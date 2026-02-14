@@ -2,8 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { convert } from 'html-to-text';
+
+import { ConnectorResult, Cursor, DataSource,IndexDocument, IndexRequest } from '../types';
 import { BaseConnector } from './base.connector';
-import { Cursor, IndexRequest, ConnectorResult, IndexDocument, DataSource } from '../types';
 
 interface JiraIssue {
     id: string;
@@ -166,7 +167,7 @@ export class JiraConnector extends BaseConnector {
                         assignee: issue.fields.assignee?.displayName || null,
                         reporter: issue.fields.reporter?.displayName || 'Unknown',
                         labels: issue.fields.labels,
-                        components: issue.fields.components?.map(c => c.name) || [],
+                        components: issue.fields.components.map(c => c.name),
                         sprint: this.getSprintName(issue.fields[this.sprintFieldId]),
                         linkedIssues: JSON.stringify(this.extractLinkedIssues(issue.fields.issuelinks)),
                         createdAt: issue.fields.created,
@@ -179,12 +180,12 @@ export class JiraConnector extends BaseConnector {
                 if (issue.fields.comment?.comments) {
                     for (let i = 0; i < issue.fields.comment.comments.length; i++) {
                         const comment = issue.fields.comment.comments[i];
-                        const renderedComment = issue.renderedFields?.comment?.comments?.[i];
+                        const renderedComment = issue.renderedFields?.comment?.comments[i];
 
                         const commentBody = renderedComment ? this.stripHtml(renderedComment.body) :
                             (typeof comment.body === 'string' ? comment.body : 'JSON content');
 
-                        const commentAuthor = comment.author?.displayName || 'Unknown';
+                        const commentAuthor = comment.author.displayName;
 
                         documents.push({
                             id: `${issue.key}_comment_${comment.id}`,
@@ -209,7 +210,7 @@ export class JiraConnector extends BaseConnector {
 
             const hasMore = !!response.data.nextPageToken;
 
-            const lastIssue = response.data.issues[response.data.issues.length - 1];
+            const lastIssue = response.data.issues[response.data.issues.length - 1] as JiraIssue | undefined;
             const batchLastSync = lastIssue ? lastIssue.fields.updated : undefined;
 
             return {
@@ -360,7 +361,7 @@ export class JiraConnector extends BaseConnector {
                     assignee: issue.fields.assignee?.displayName || null,
                     reporter: issue.fields.reporter?.displayName || 'Unknown',
                     labels: issue.fields.labels,
-                    components: issue.fields.components?.map(c => c.name) || [],
+                    components: issue.fields.components.map(c => c.name),
                     sprint: this.getSprintName(issue.fields[this.sprintFieldId]),
                     linkedIssues: JSON.stringify(this.extractLinkedIssues(issue.fields.issuelinks)),
                     createdAt: issue.fields.created,
@@ -373,12 +374,12 @@ export class JiraConnector extends BaseConnector {
             if (issue.fields.comment?.comments) {
                 for (let i = 0; i < issue.fields.comment.comments.length; i++) {
                     const comment = issue.fields.comment.comments[i];
-                    const renderedComment = issue.renderedFields?.comment?.comments?.[i];
+                    const renderedComment = issue.renderedFields?.comment?.comments[i];
 
                     const commentBody = renderedComment ? this.stripHtml(renderedComment.body) :
                         (typeof comment.body === 'string' ? comment.body : 'JSON content');
 
-                    const commentAuthor = comment.author?.displayName || 'Unknown';
+                    const commentAuthor = comment.author.displayName;
 
                     documents.push({
                         id: `${issue.key}_comment_${comment.id}`,

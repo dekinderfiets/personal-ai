@@ -1,8 +1,9 @@
-import { DriveConnector } from './drive.connector';
 import { ConfigService } from '@nestjs/config';
-import { GoogleAuthService } from './google-auth.service';
-import { FileProcessorService } from '../indexing/file-processor.service';
 import axios from 'axios';
+
+import { FileProcessorService } from '../indexing/file-processor.service';
+import { DriveConnector } from './drive.connector';
+import { GoogleAuthService } from './google-auth.service';
 
 jest.mock('axios');
 

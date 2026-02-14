@@ -1,8 +1,9 @@
-import { Controller, Get, Param, Query, Post, Body, UseGuards, HttpException, HttpStatus, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpException, HttpStatus, Param, Post, Query, Res,UseGuards } from '@nestjs/common';
 import { Response } from 'express';
+
 import { ApiKeyGuard } from '../auth/api-key.guard';
-import { AnalyticsService, SystemStats, SourceStats, IndexingRun } from '../indexing/analytics.service';
-import { ConnectorHealthService, ConnectorHealth } from '../indexing/health.service';
+import { AnalyticsService, IndexingRun,SourceStats, SystemStats } from '../indexing/analytics.service';
+import { ConnectorHealth,ConnectorHealthService } from '../indexing/health.service';
 import { SettingsService } from '../indexing/settings.service';
 import { DataSource, SourceSettings } from '../types';
 
@@ -93,6 +94,7 @@ export class AnalyticsController {
         const imported: string[] = [];
         const skipped: string[] = [];
 
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard for untyped input
         if (!body.settings || typeof body.settings !== 'object') {
             throw new HttpException('Invalid config format. Expected { settings: { ... } }', HttpStatus.BAD_REQUEST);
         }

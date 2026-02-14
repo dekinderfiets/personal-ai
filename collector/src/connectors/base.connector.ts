@@ -1,4 +1,4 @@
-import { IndexDocument, Cursor, IndexRequest, ConnectorResult } from '../types';
+import { ConnectorResult,Cursor, IndexRequest } from '../types';
 
 /**
  * Base connector interface that all data source connectors must implement

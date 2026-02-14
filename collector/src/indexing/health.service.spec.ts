@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
-import { ConnectorHealthService } from './health.service';
 import axios from 'axios';
+
+import { ConnectorHealthService } from './health.service';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;

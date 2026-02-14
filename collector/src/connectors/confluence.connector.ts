@@ -2,8 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { convert } from 'html-to-text';
+
+import { ConnectorResult, Cursor, DataSource,IndexDocument, IndexRequest } from '../types';
 import { BaseConnector } from './base.connector';
-import { Cursor, IndexRequest, ConnectorResult, IndexDocument, DataSource } from '../types';
 
 interface ConfluencePage {
     id: string;
@@ -143,7 +144,7 @@ export class ConfluenceConnector extends BaseConnector {
 
             const hasNextLink = !!response.data._links?.next;
             const isLastPage = allSeen || !hasNextLink || response.data.size < this.pageSize;
-            const nextStart = start + response.data.size;
+            const nextStart = start + (response.data.size as number);
 
             if (allSeen) {
                 this.logger.log(`Confluence: detected result cycling at start=${start}, stopping. Total unique pages seen: ${this.seenPageIds.size}`);

@@ -1,7 +1,8 @@
-import { CalendarConnector } from './calendar.connector';
 import { ConfigService } from '@nestjs/config';
-import { GoogleAuthService } from './google-auth.service';
 import axios from 'axios';
+
+import { CalendarConnector } from './calendar.connector';
+import { GoogleAuthService } from './google-auth.service';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;

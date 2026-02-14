@@ -1,7 +1,8 @@
-import { GmailConnector } from './gmail.connector';
 import { ConfigService } from '@nestjs/config';
-import { GoogleAuthService } from './google-auth.service';
 import axios from 'axios';
+
+import { GmailConnector } from './gmail.connector';
+import { GoogleAuthService } from './google-auth.service';
 
 jest.mock('axios');
 jest.mock('html-to-text', () => ({

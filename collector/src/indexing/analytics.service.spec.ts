@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
-import { AnalyticsService, IndexingRun, SourceStats } from './analytics.service';
+
 import { DataSource } from '../types';
+import { AnalyticsService, IndexingRun, SourceStats } from './analytics.service';
 
 function createRedisMock() {
     const store = new Map<string, string>();
