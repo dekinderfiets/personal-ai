@@ -3,7 +3,7 @@ import { Body, Controller, Delete, Get, HttpException, HttpStatus, Param, Post, 
 import { ApiKeyGuard } from '../auth/api-key.guard';
 import { IndexingService } from '../indexing/indexing.service';
 import { SettingsService } from '../indexing/settings.service';
-import { DataSource, IndexRequest, IndexResponse, IndexStatus, SourceSettings } from '../types';
+import { DataSource, IndexRequest, IndexResponse, IndexStatus, SourceInfo, SourceSettings } from '../types';
 
 const VALID_SOURCES: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar'];
 
@@ -39,6 +39,11 @@ export class IndexController {
             source: source as DataSource,
             message: result.message,
         };
+    }
+
+    @Get('sources')
+    async getAllSourceInfo(): Promise<SourceInfo[]> {
+        return this.indexingService.getAllSourceInfo();
     }
 
     @Get(':source/status')

@@ -13,6 +13,7 @@ describe('IndexController', () => {
             indexAll: jest.fn(),
             getStatus: jest.fn(),
             getAllStatus: jest.fn(),
+            getAllSourceInfo: jest.fn(),
             resetStatusOnly: jest.fn(),
             resetCursor: jest.fn(),
             resetAll: jest.fn(),
@@ -113,6 +114,18 @@ describe('IndexController', () => {
             const result = await controller.getAllStatus();
 
             expect(result).toEqual(statuses);
+        });
+    });
+
+    describe('GET /index/sources', () => {
+        it('should return source info array', async () => {
+            const mockSourceInfo = [
+                { source: 'gmail', status: 'completed', documentsIndexed: 100, lastSync: '2026-02-14T10:00:00Z', lastError: null, lastErrorAt: null, workflowId: 'index-gmail', executionTime: 5000 },
+            ];
+            jest.spyOn(mockIndexingService, 'getAllSourceInfo').mockResolvedValue(mockSourceInfo as any);
+
+            const result = await controller.getAllSourceInfo();
+            expect(result).toEqual(mockSourceInfo);
         });
     });
 

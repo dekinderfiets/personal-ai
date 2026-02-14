@@ -62,6 +62,7 @@ function createMockTemporalClient() {
         startIndexSource: jest.fn().mockResolvedValue({ started: true, message: 'ok' }),
         startCollectAll: jest.fn().mockResolvedValue({ started: true }),
         isWorkflowRunning: jest.fn().mockResolvedValue(false),
+        getSourceWorkflowInfo: jest.fn().mockResolvedValue(null),
     };
 }
 
@@ -1143,6 +1144,97 @@ describe('IndexingService', () => {
             // Result should have new fields
             expect((result.metadata as any).relevance_score).toBeDefined();
             expect(result).not.toBe(original);
+        });
+    });
+
+    // -----------------------------------------------------------------------
+    // getAllSourceInfo
+    // -----------------------------------------------------------------------
+    describe('getAllSourceInfo', () => {
+        it('should merge Temporal workflow info with Redis document counts', async () => {
+            const { service, temporalClient, cursorService } = createService();
+
+            jest.spyOn(temporalClient, 'getSourceWorkflowInfo').mockImplementation(async (source: string) => {
+                if (source === 'gmail') {
+                    return {
+                        workflowId: 'index-gmail',
+                        runId: 'run-1',
+                        type: 'indexSourceWorkflow',
+                        status: 'COMPLETED',
+                        startTime: '2026-02-14T10:00:00.000Z',
+                        closeTime: '2026-02-14T10:05:00.000Z',
+                        executionTime: 300000,
+                    };
+                }
+                return null;
+            });
+
+            jest.spyOn(cursorService, 'getJobStatus').mockImplementation(async (source) => {
+                if (source === 'gmail') {
+                    return { source: 'gmail', status: 'completed', lastSync: null, documentsIndexed: 150 } as any;
+                }
+                return null;
+            });
+
+            const result = await service.getAllSourceInfo();
+            const gmail = result.find(s => s.source === 'gmail')!;
+
+            expect(gmail.status).toBe('completed');
+            expect(gmail.documentsIndexed).toBe(150);
+            expect(gmail.lastSync).toBe('2026-02-14T10:05:00.000Z');
+            expect(gmail.lastError).toBeNull();
+            expect(gmail.workflowId).toBe('index-gmail');
+            expect(gmail.executionTime).toBe(300000);
+        });
+
+        it('should return idle status when no Temporal workflow exists', async () => {
+            const { service, temporalClient, cursorService } = createService();
+
+            jest.spyOn(temporalClient, 'getSourceWorkflowInfo').mockResolvedValue(null);
+            jest.spyOn(cursorService, 'getJobStatus').mockResolvedValue(null);
+
+            const result = await service.getAllSourceInfo();
+            const gmail = result.find(s => s.source === 'gmail')!;
+
+            expect(gmail.status).toBe('idle');
+            expect(gmail.documentsIndexed).toBe(0);
+            expect(gmail.lastSync).toBeNull();
+        });
+
+        it('should map FAILED Temporal status and extract error from Redis', async () => {
+            const { service, temporalClient, cursorService } = createService();
+
+            jest.spyOn(temporalClient, 'getSourceWorkflowInfo').mockImplementation(async (source: string) => {
+                if (source === 'slack') {
+                    return {
+                        workflowId: 'index-slack',
+                        runId: 'run-2',
+                        type: 'indexSourceWorkflow',
+                        status: 'FAILED',
+                        startTime: '2026-02-14T09:00:00.000Z',
+                        closeTime: '2026-02-14T09:01:00.000Z',
+                        executionTime: 60000,
+                    };
+                }
+                return null;
+            });
+
+            jest.spyOn(cursorService, 'getJobStatus').mockImplementation(async (source) => {
+                if (source === 'slack') {
+                    return {
+                        source: 'slack', status: 'error', lastSync: null, documentsIndexed: 50,
+                        lastError: 'Rate limit exceeded', lastErrorAt: '2026-02-14T09:01:00.000Z',
+                    } as any;
+                }
+                return null;
+            });
+
+            const result = await service.getAllSourceInfo();
+            const slack = result.find(s => s.source === 'slack')!;
+
+            expect(slack.status).toBe('failed');
+            expect(slack.lastError).toBe('Rate limit exceeded');
+            expect(slack.lastErrorAt).toBe('2026-02-14T09:01:00.000Z');
         });
     });
 });

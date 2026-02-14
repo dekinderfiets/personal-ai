@@ -10,7 +10,7 @@ import { GmailConnector } from '../connectors/gmail.connector';
 import { JiraConnector } from '../connectors/jira.connector';
 import { SlackConnector } from '../connectors/slack.connector';
 import { TemporalClientService } from '../temporal/temporal-client.service';
-import { ConnectorResult, Cursor, DataSource, IndexDocument, IndexRequest, IndexStatus, SourceSettings } from '../types';
+import { ConnectorResult, Cursor, DataSource, IndexDocument, IndexRequest, IndexStatus, SourceInfo, SourceSettings } from '../types';
 import { AnalyticsService } from './analytics.service';
 import { CursorService } from './cursor.service';
 import { ElasticsearchService } from './elasticsearch.service';
@@ -361,6 +361,62 @@ export class IndexingService {
         });
 
         return Promise.all(staleChecks);
+    }
+
+    async getAllSourceInfo(): Promise<SourceInfo[]> {
+        const sources = this.allSources;
+
+        const results = await Promise.all(
+            sources.map(async (source): Promise<SourceInfo> => {
+                const [workflowInfo, redisStatus] = await Promise.all([
+                    this.temporalClient.getSourceWorkflowInfo(source),
+                    this.cursorService.getJobStatus(source),
+                ]);
+
+                const documentsIndexed = redisStatus?.documentsIndexed ?? 0;
+
+                if (!workflowInfo) {
+                    return {
+                        source,
+                        status: 'idle',
+                        documentsIndexed,
+                        lastSync: redisStatus?.lastSync ?? null,
+                        lastError: null,
+                        lastErrorAt: null,
+                        workflowId: null,
+                        executionTime: null,
+                    };
+                }
+
+                const statusMap: Record<string, SourceInfo['status']> = {
+                    RUNNING: 'running',
+                    COMPLETED: 'completed',
+                    FAILED: 'failed',
+                    CANCELLED: 'cancelled',
+                    TERMINATED: 'cancelled',
+                    TIMED_OUT: 'failed',
+                    CONTINUED_AS_NEW: 'running',
+                };
+
+                const status = statusMap[workflowInfo.status] ?? 'idle';
+                const lastSync = workflowInfo.status === 'COMPLETED'
+                    ? workflowInfo.closeTime ?? null
+                    : redisStatus?.lastSync ?? null;
+
+                return {
+                    source,
+                    status,
+                    documentsIndexed,
+                    lastSync,
+                    lastError: redisStatus?.lastError ?? null,
+                    lastErrorAt: redisStatus?.lastErrorAt ?? null,
+                    workflowId: workflowInfo.workflowId,
+                    executionTime: workflowInfo.executionTime ?? null,
+                };
+            }),
+        );
+
+        return results;
     }
 
     async resetStatusOnly(source: DataSource): Promise<void> {

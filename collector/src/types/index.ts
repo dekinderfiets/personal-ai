@@ -210,6 +210,17 @@ export interface IndexStatus {
     lastErrorAt?: string;
 }
 
+export interface SourceInfo {
+    source: DataSource;
+    status: 'idle' | 'running' | 'completed' | 'failed' | 'cancelled';
+    documentsIndexed: number;
+    lastSync: string | null;
+    lastError: string | null;
+    lastErrorAt: string | null;
+    workflowId: string | null;
+    executionTime: number | null;
+}
+
 export interface IndexResponse {
     status: 'started' | 'already_running' | 'error';
     source: DataSource;
