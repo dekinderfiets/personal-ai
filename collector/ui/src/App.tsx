@@ -16,7 +16,7 @@ import StorageOutlinedIcon from '@mui/icons-material/StorageOutlined';
 import Dashboard from './pages/Dashboard';
 import Settings from './pages/Settings';
 import Documents from './pages/Documents';
-import Activity from './pages/Activity';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { createAppTheme } from './theme';
 import { ColorModeContext } from './context/ColorModeContext';
 
@@ -25,9 +25,10 @@ const SIDEBAR_WIDTH = 220;
 const NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: <DashboardOutlinedIcon /> },
   { path: '/documents', label: 'Documents', icon: <DescriptionOutlinedIcon /> },
-  { path: '/activity', label: 'Activity', icon: <TimelineOutlinedIcon /> },
   { path: '/settings', label: 'Settings', icon: <SettingsOutlinedIcon /> },
 ];
+
+const TEMPORAL_UI_URL = import.meta.env.VITE_TEMPORAL_UI_URL || 'http://localhost:8088';
 
 function SidebarContent({ mode, toggleMode }: { mode: PaletteMode; toggleMode: () => void }) {
   const location = useLocation();
@@ -81,6 +82,27 @@ function SidebarContent({ mode, toggleMode }: { mode: PaletteMode; toggleMode: (
             />
           </ListItemButton>
         ))}
+        <ListItemButton
+          component="a"
+          href={TEMPORAL_UI_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          sx={{
+            mb: 0.5,
+            px: 1.5,
+            py: 0.75,
+            borderRadius: 1,
+          }}
+        >
+          <ListItemIcon sx={{ minWidth: 36, color: 'text.secondary' }}>
+            <TimelineOutlinedIcon />
+          </ListItemIcon>
+          <ListItemText
+            primary="Workflows"
+            primaryTypographyProps={{ variant: 'body2', fontWeight: 400 }}
+          />
+          <OpenInNewIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+        </ListItemButton>
       </List>
 
       <Divider />
@@ -153,7 +175,7 @@ function App() {
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/documents" element={<Documents />} />
-                  <Route path="/activity" element={<Activity />} />
+                  <Route path="/activity" element={<Navigate to="/" replace />} />
                   <Route path="/search" element={<Navigate to="/documents" replace />} />
                 </Routes>
               </Box>
