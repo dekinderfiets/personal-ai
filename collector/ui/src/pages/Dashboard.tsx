@@ -42,7 +42,7 @@ import MailOutlined from '@mui/icons-material/MailOutlined';
 import CloudOutlined from '@mui/icons-material/CloudOutlined';
 import MenuBookOutlined from '@mui/icons-material/MenuBookOutlined';
 import CalendarMonthOutlined from '@mui/icons-material/CalendarMonthOutlined';
-import { DataSource, IndexStatus, SOURCE_COLORS, SOURCE_LABELS } from '../types/api';
+import { DataSource, SourceInfo, SOURCE_COLORS, SOURCE_LABELS } from '../types/api';
 import { useLocalSettings } from '../hooks/useLocalSettings';
 
 // ---------------------------------------------------------------------------
@@ -90,15 +90,16 @@ function formatRelativeTime(dateStr: string): string {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-const StatusChip: React.FC<{ status: IndexStatus['status'] }> = ({ status }) => {
+const StatusChip: React.FC<{ status: SourceInfo['status'] }> = ({ status }) => {
   const config: Record<
-    IndexStatus['status'],
-    { label: string; color: 'default' | 'info' | 'success' | 'error' }
+    SourceInfo['status'],
+    { label: string; color: 'default' | 'info' | 'success' | 'error' | 'warning' }
   > = {
     idle: { label: 'Idle', color: 'default' },
     running: { label: 'Running', color: 'info' },
     completed: { label: 'Completed', color: 'success' },
-    error: { label: 'Error', color: 'error' },
+    failed: { label: 'Failed', color: 'error' },
+    cancelled: { label: 'Cancelled', color: 'warning' },
   };
   const { label, color } = config[status];
   return (
@@ -196,7 +197,7 @@ const SummaryCard: React.FC<SummaryCardProps> = ({ icon, label, value }) => (
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const [statuses, setStatuses] = useState<IndexStatus[]>([]);
+  const [statuses, setStatuses] = useState<SourceInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [indexingStatus, setIndexingStatus] = useState<Record<string, boolean>>({});
@@ -220,11 +221,11 @@ const Dashboard: React.FC = () => {
   const fetchStatuses = useCallback(async () => {
     if (!initialLoadDone.current) setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/index/status`);
+      const response = await fetch(`${API_BASE_URL}/index/sources`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      const data: IndexStatus[] = await response.json();
+      const data: SourceInfo[] = await response.json();
       setStatuses(data);
       initialLoadDone.current = true;
     } catch (e: any) {
@@ -288,7 +289,7 @@ const Dashboard: React.FC = () => {
     setStatuses((prev) =>
       prev.map((s) =>
         source === 'all' || s.source === source
-          ? { ...s, lastError: undefined, lastErrorAt: undefined }
+          ? { ...s, lastError: null, lastErrorAt: null }
           : s,
       ),
     );
@@ -427,7 +428,7 @@ const Dashboard: React.FC = () => {
 
   const totalDocuments = statuses.reduce((sum, s) => sum + s.documentsIndexed, 0);
   const activeSources = statuses.filter((s) => s.documentsIndexed > 0 || s.status === 'running').length;
-  const errorCount = statuses.filter((s) => s.status === 'error' || s.lastError).length;
+  const errorCount = statuses.filter((s) => s.status === 'failed' || s.status === 'cancelled' || s.lastError).length;
 
   const lastSyncTime = statuses.reduce<string | null>((latest, s) => {
     if (!s.lastSync) return latest;
