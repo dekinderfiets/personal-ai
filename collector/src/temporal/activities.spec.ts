@@ -153,7 +153,7 @@ describe('createActivities', () => {
                     documents: [
                         {
                             id: 'doc1',
-                            source: 'github',
+                            source: 'jira',
                             content: 'code',
                             metadata: {},
                             preChunked: { chunks: ['a', 'b'] },
@@ -165,7 +165,7 @@ describe('createActivities', () => {
             };
             deps.indexingService.getConnector.mockReturnValue(mockConnector);
 
-            const result = await activities.fetchBatch('github', null, {});
+            const result = await activities.fetchBatch('jira', null, {});
 
             expect(result.documents[0]).toHaveProperty('preChunked');
         });

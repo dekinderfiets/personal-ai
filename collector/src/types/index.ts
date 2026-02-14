@@ -1,5 +1,5 @@
 // Data Source Types
-export type DataSource = 'jira' | 'slack' | 'gmail' | 'drive' | 'confluence' | 'calendar' | 'github';
+export type DataSource = 'jira' | 'slack' | 'gmail' | 'drive' | 'confluence' | 'calendar';
 
 // Base Document Interface
 export interface BaseDocument {
@@ -175,40 +175,8 @@ export interface CalendarDocument extends BaseDocument {
     };
 }
 
-// GitHub Document
-export interface GitHubDocument extends BaseDocument {
-    source: 'github';
-    metadata: {
-        id: string;
-        source: 'github';
-        type: 'repository' | 'pull_request' | 'pr_review' | 'pr_comment' | 'file';
-        title: string;
-        repo: string;
-        number?: number;
-        state?: string;
-        author: string;
-        labels?: string[];
-        milestone?: string | null;
-        assignees?: string[];
-        createdAt: string;
-        updatedAt: string;
-        url: string;
-        parentId?: string;
-        search_context?: string;
-        // File-specific metadata
-        filePath?: string;
-        fileExtension?: string;
-        fileLanguage?: string;
-        fileSha?: string;
-        fileSize?: number;
-        // Relevance weights
-        relevance_score?: number;
-        is_assigned_to_me?: boolean;
-        is_author?: boolean;
-    };
-}
 
-export type IndexDocument = JiraDocument | SlackDocument | GmailDocument | DriveDocument | ConfluenceDocument | CalendarDocument | GitHubDocument;
+export type IndexDocument = JiraDocument | SlackDocument | GmailDocument | DriveDocument | ConfluenceDocument | CalendarDocument;
 
 // Cursor/Checkpoint Types
 export interface Cursor {
@@ -230,8 +198,6 @@ export interface IndexRequest {
     folderIds?: string[];      // For Drive
     gmailSettings?: GmailSettings;
     calendarIds?: string[];    // For Calendar
-    repos?: string[];          // For GitHub
-    indexFiles?: boolean;      // For GitHub file indexing
 }
 
 export interface IndexStatus {
@@ -277,12 +243,8 @@ export interface CalendarSettings {
     calendarIds: string[];
 }
 
-export interface GitHubSettings {
-    repos: string[];
-    indexFiles?: boolean;
-}
 
-export type SourceSettings = DriveSettings | GmailSettings | SlackSettings | JiraSettings | ConfluenceSettings | CalendarSettings | GitHubSettings;
+export type SourceSettings = DriveSettings | GmailSettings | SlackSettings | JiraSettings | ConfluenceSettings | CalendarSettings;
 
 // Connector Interface
 export interface ConnectorResult {
@@ -312,25 +274,7 @@ export interface SearchResult {
     score: number;
 }
 
-// Navigation Types
-export interface NavigationRequest {
-    documentId: string;
-    direction: 'prev' | 'next' | 'siblings' | 'parent' | 'children';
-    scope: 'chunk' | 'datapoint' | 'context';
-    limit?: number;
-}
 
-export interface NavigationResult {
-    current: SearchResult | null;
-    related: SearchResult[];
-    navigation: {
-        hasPrev: boolean;
-        hasNext: boolean;
-        parentId: string | null;
-        contextType: string;
-        totalSiblings?: number;
-    };
-}
 
 // Documents Page Types
 export interface BulkDeleteRequest {

@@ -20,7 +20,6 @@ import { GmailConnector } from './connectors/gmail.connector';
 import { DriveConnector } from './connectors/drive.connector';
 import { ConfluenceConnector } from './connectors/confluence.connector';
 import { CalendarConnector } from './connectors/calendar.connector';
-import { GitHubConnector } from './connectors/github.connector';
 import { GoogleAuthService } from './connectors/google-auth.service';
 import { SettingsService } from './indexing/settings.service';
 import { AnalyticsService } from './indexing/analytics.service';
@@ -33,7 +32,6 @@ import {
     slackConfig,
     googleConfig,
     confluenceConfig,
-    githubConfig,
     elasticsearchConfig,
     temporalConfig,
     openaiConfig,
@@ -57,7 +55,6 @@ import { FileProcessorService } from './indexing/file-processor.service';
                 slackConfig,
                 googleConfig,
                 confluenceConfig,
-                githubConfig,
                 elasticsearchConfig,
                 temporalConfig,
                 openaiConfig,
@@ -87,7 +84,6 @@ import { FileProcessorService } from './indexing/file-processor.service';
         DriveConnector,
         ConfluenceConnector,
         CalendarConnector,
-        GitHubConnector,
         GoogleAuthService,
         AnalyticsService,
         ConnectorHealthService,

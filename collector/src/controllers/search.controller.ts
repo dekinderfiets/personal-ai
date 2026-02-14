@@ -2,9 +2,9 @@ import { Controller, Post, Get, Param, Query, Body, UseGuards, HttpException, Ht
 import { ElasticsearchService } from '../indexing/elasticsearch.service';
 import { IndexingService } from '../indexing/indexing.service';
 import { ApiKeyGuard } from '../auth/api-key.guard';
-import { DataSource, SearchRequest, SearchResult, NavigationResult, BulkDeleteRequest, BulkDeleteResponse, DocumentStats } from '../types';
+import { DataSource, SearchRequest, SearchResult, BulkDeleteRequest, BulkDeleteResponse, DocumentStats } from '../types';
 
-const ALL_SOURCES: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar', 'github'];
+const ALL_SOURCES: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar'];
 
 @Controller('search')
 @UseGuards(ApiKeyGuard)
@@ -27,20 +27,6 @@ export class SearchController {
         });
     }
 
-    @Get('navigate/:documentId')
-    async navigate(
-        @Param('documentId') documentId: string,
-        @Query('direction') direction: 'prev' | 'next' | 'siblings' | 'parent' | 'children' = 'next',
-        @Query('scope') scope: 'chunk' | 'datapoint' | 'context' = 'datapoint',
-        @Query('limit') limit?: string,
-    ): Promise<NavigationResult> {
-        return this.elasticsearchService.navigate(
-            documentId,
-            direction,
-            scope,
-            limit ? parseInt(limit, 10) : 10,
-        );
-    }
 
     // --- Documents endpoints (must be before documents/:id) ---
 

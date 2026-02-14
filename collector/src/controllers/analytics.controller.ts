@@ -6,7 +6,7 @@ import { ConnectorHealthService, ConnectorHealth } from '../indexing/health.serv
 import { SettingsService } from '../indexing/settings.service';
 import { DataSource, SourceSettings } from '../types';
 
-const VALID_SOURCES: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar', 'github'];
+const VALID_SOURCES: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar'];
 
 @Controller('analytics')
 @UseGuards(ApiKeyGuard)

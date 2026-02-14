@@ -4,7 +4,7 @@ Base URL: `http://localhost:8087/api/v1`
 
 Authentication: `X-API-Key` header (validated by `ApiKeyGuard`). If `APP_API_KEY` env var is not set, all requests are allowed.
 
-Valid sources: `jira | slack | gmail | drive | confluence | calendar | github`
+Valid sources: `jira | slack | gmail | drive | confluence | calendar`
 
 ---
 
@@ -100,40 +100,6 @@ Valid sources: `jira | slack | gmail | drive | confluence | calendar | github`
 - Post-retrieval boosts: connector relevance_score, title match, recency decay (per-source half-life)
 - Chunk deduplication: keeps best chunk per parent document, boosts multi-chunk matches
 
-### 3.2 GET `/search/navigate/:documentId` — Document navigation
-
-**Auth:** Yes (ApiKeyGuard)
-
-**Query Parameters:**
-| Param | Type | Default | Values |
-|-------|------|---------|--------|
-| `direction` | string | `next` | `prev`, `next`, `siblings`, `parent`, `children` |
-| `scope` | string | `datapoint` | `chunk`, `datapoint`, `context` |
-| `limit` | string (number) | `10` | Any positive integer |
-
-**Response** (`NavigationResult`):
-```typescript
-{
-  current: SearchResult | null;
-  related: SearchResult[];
-  navigation: {
-    hasPrev: boolean;
-    hasNext: boolean;
-    parentId: string | null;
-    contextType: string;  // 'thread', 'channel', 'issue', 'project', 'folder', 'page', 'space', 'calendar', 'pull_request', 'repository'
-    totalSiblings?: number;
-  }
-}
-```
-
-**Navigation scopes:**
-- **chunk**: Navigate between chunks of the same parent document
-- **datapoint**: Navigate within a logical group (thread, folder, project)
-- **context**: Navigate within broader context (channel, space, repository)
-
-**Structural directions** (`parent`/`children`) work independently of scope.
-
----
 
 ## 4. Index Controller (`/index`)
 
@@ -157,8 +123,6 @@ Valid sources: `jira | slack | gmail | drive | confluence | calendar | github`
   folderIds?: string[];      // Drive
   gmailSettings?: { domains: string[]; senders: string[]; labels: string[] };
   calendarIds?: string[];    // Calendar
-  repos?: string[];          // GitHub
-  indexFiles?: boolean;      // GitHub file indexing
 }
 ```
 
@@ -216,7 +180,6 @@ SlackSettings     { channelIds: string[] }
 JiraSettings      { projectKeys: string[] }
 ConfluenceSettings { spaceKeys: string[] }
 CalendarSettings  { calendarIds: string[] }
-GitHubSettings    { repos: string[]; indexFiles?: boolean }
 ```
 
 ### 4.4 Discovery Endpoints
@@ -229,7 +192,6 @@ GitHubSettings    { repos: string[]; indexFiles?: boolean }
 | GET | `/index/discovery/confluence/spaces` | Yes | List Confluence spaces |
 | GET | `/index/discovery/calendar` | Yes | List Google calendars |
 | GET | `/index/discovery/gmail/labels` | Yes | List Gmail labels |
-| GET | `/index/discovery/github/repos` | Yes | List GitHub repositories |
 
 ---
 
@@ -385,7 +347,6 @@ These methods are available on `ChromaService` but **NOT exposed as REST endpoin
 |--------|-------------|
 | `upsertDocuments(source, documents)` | Upsert documents with content-hash diffing (skip re-embedding unchanged content) |
 | `search(query, options)` | Full search with vector/keyword/hybrid + filters |
-| `navigate(documentId, direction, scope, limit)` | Context-aware document navigation |
 | `getDocument(source, documentId)` | Get a single document by ID (scans all sources if needed) |
 | `getDocumentsByMetadata(source, where, limit)` | Query documents by arbitrary metadata filter |
 | `deleteDocument(source, documentId)` | Delete document + all its chunks |
@@ -418,7 +379,6 @@ All documents include:
 
 - Content > 8000 chars is split into ~4000 char chunks with 200 char overlap
 - Boundary detection: paragraph breaks > line breaks > sentence boundaries > word boundaries
-- GitHub files use language-aware chunking via `ChunkingService` (LangChain `RecursiveCharacterTextSplitter`)
 
 ---
 
@@ -450,4 +410,3 @@ All documents include:
 | **Drive** | name, mimeType, path, folderPath, owner, modifiedAt |
 | **Confluence** | space, spaceName, author, labels, ancestors, type (page/blogpost/comment) |
 | **Calendar** | summary, location, start, end, attendees, organizer, status |
-| **GitHub** | repo, number, state, author, labels, type (issue/PR/file/review/comment), filePath |

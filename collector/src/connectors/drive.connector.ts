@@ -96,7 +96,7 @@ export class DriveConnector extends BaseConnector {
                         if (!fileResult) return null;
 
                         const path = await this.getFilePath(token, file);
-                        // Extract parent folder path for sibling navigation
+                        // Extract parent folder path for search context
                         const lastSlash = path.lastIndexOf('/');
                         const folderPath = lastSlash > 0 ? path.substring(0, lastSlash) : '/';
                         const doc: DriveDocument = {

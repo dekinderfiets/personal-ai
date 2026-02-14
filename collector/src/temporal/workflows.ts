@@ -167,7 +167,7 @@ export async function indexSourceWorkflow(input: IndexSourceInput): Promise<Inde
     }
 }
 
-const ALL_SOURCES: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar', 'github'];
+const ALL_SOURCES: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar'];
 
 export async function collectAllWorkflow(input: CollectAllInput): Promise<CollectAllResult> {
     const sources = input.sources || ALL_SOURCES;

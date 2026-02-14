@@ -48,10 +48,6 @@ export const confluenceConfig = registerAs('confluence', () => ({
     spacesToIndex: [],
 }));
 
-export const githubConfig = registerAs('github', () => ({
-    token: process.env.GITHUB_TOKEN,
-    username: process.env.GITHUB_USERNAME,
-}));
 
 export const elasticsearchConfig = registerAs('elasticsearch', () => ({
     node: process.env.ELASTICSEARCH_URL || 'http://localhost:9200',

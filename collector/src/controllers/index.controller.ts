@@ -4,7 +4,7 @@ import { SettingsService } from '../indexing/settings.service';
 import { DataSource, IndexRequest, IndexResponse, IndexStatus, SourceSettings } from '../types';
 import { ApiKeyGuard } from '../auth/api-key.guard';
 
-const VALID_SOURCES: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar', 'github'];
+const VALID_SOURCES: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar'];
 
 @Controller('index')
 @UseGuards(ApiKeyGuard)
@@ -144,8 +144,4 @@ export class IndexController {
         return this.indexingService.getGmailLabels();
     }
 
-    @Get('discovery/github/repos')
-    async discoverGitHubRepos(): Promise<any[]> {
-        return this.indexingService.getGitHubRepositories();
-    }
 }

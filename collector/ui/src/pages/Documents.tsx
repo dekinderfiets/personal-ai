@@ -12,7 +12,6 @@ import TuneIcon from '@mui/icons-material/Tune';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import ExploreIcon from '@mui/icons-material/Explore';
 import SortIcon from '@mui/icons-material/Sort';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
@@ -20,7 +19,6 @@ import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { useNavigate } from 'react-router-dom';
 import {
   DataSource, SearchResult, ALL_SOURCES, DEFAULT_SEARCH_SOURCES, SOURCE_COLORS, SOURCE_LABELS, DocumentStats,
 } from '../types/api';
@@ -84,7 +82,6 @@ const highlightSnippet = (content: string): string => {
 // ---------------------------------------------------------------------------
 
 const Documents: React.FC = () => {
-  const navigate = useNavigate();
 
   // Search controls
   const [query, setQuery] = useState('');
@@ -686,9 +683,7 @@ const Documents: React.FC = () => {
                   <MenuItem value="document">Document</MenuItem>
                   <MenuItem value="page">Page</MenuItem>
                   <MenuItem value="event">Event</MenuItem>
-                  <MenuItem value="pull_request">Pull Request</MenuItem>
                   <MenuItem value="comment">Comment</MenuItem>
-                  <MenuItem value="file">File</MenuItem>
                 </Select>
               </FormControl>
               <Box sx={{ width: 180 }}>
@@ -861,7 +856,6 @@ const Documents: React.FC = () => {
                               whiteSpace: 'nowrap',
                               '&:hover': { textDecoration: 'underline' },
                             }}
-                            onClick={() => navigate(`/explore/${encodeURIComponent(result.id)}`)}
                           >
                             {getTitle(result)}
                           </Typography>
@@ -886,18 +880,6 @@ const Documents: React.FC = () => {
                               </IconButton>
                             </Tooltip>
                           )}
-                          <Tooltip title="Explore context">
-                            <IconButton
-                              size="small"
-                              onClick={() => navigate(`/explore/${encodeURIComponent(result.id)}`)}
-                              sx={{
-                                color: 'text.secondary',
-                                '&:hover': { color: 'primary.main' },
-                              }}
-                            >
-                              <ExploreIcon sx={{ fontSize: 18 }} />
-                            </IconButton>
-                          </Tooltip>
                           <Tooltip title="Delete document">
                             <IconButton
                               size="small"

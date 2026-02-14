@@ -41,7 +41,7 @@ export function useLocalSettings() {
   const applyDateToAll = useCallback((startDate?: string, endDate?: string, sinceLast?: boolean) => {
     setSettings(prev => {
       const next = { ...prev };
-      const sources: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar', 'github'];
+      const sources: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar'];
       for (const s of sources) {
         next[s] = { ...(next[s] || {}), startDate, endDate, sinceLast };
       }

@@ -1,11 +1,11 @@
 ---
 name: collector
-description: Search, navigate, and manage the personal data collector service. Query indexed data from Gmail, Drive, Calendar, Slack, Jira, Confluence, and GitHub.
+description: Search and manage the personal data collector service. Query indexed data from Gmail, Drive, Calendar, Slack, Jira, and Confluence.
 ---
 
 # Collector Tool
 
-Interact with the personal data collector service via its REST API. The collector indexes data from multiple sources (Gmail, Drive, Calendar, Slack, Jira, Confluence, GitHub) and provides unified search and navigation.
+Interact with the personal data collector service via its REST API. The collector indexes data from multiple sources (Gmail, Drive, Calendar, Slack, Jira, Confluence) and provides unified search.
 
 ## Prerequisites
 
@@ -36,7 +36,6 @@ All requests require the `x-api-key` header:
 | `drive` | `document`, `spreadsheet`, `presentation`, `pdf`, `other` | name, mimeType, path, owner |
 | `confluence` | `page`, `blogpost`, `comment` | space, spaceName, author, labels |
 | `calendar` | `event` | summary, start, end, attendees, organizer, location |
-| `github` | `repository`, `issue`, `pull_request`, `pr_review`, `pr_comment` | repo, number, state, author, labels, assignees |
 
 ---
 
@@ -65,7 +64,7 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `query` | string | Yes | Search query text |
-| `sources` | string[] | No | Filter by sources (default: all). Values: `jira`, `slack`, `gmail`, `drive`, `confluence`, `calendar`, `github` |
+| `sources` | string[] | No | Filter by sources (default: all). Values: `jira`, `slack`, `gmail`, `drive`, `confluence`, `calendar` |
 | `searchType` | string | No | `vector` (semantic), `keyword` (exact), or `hybrid` (both). Default: `hybrid` |
 | `limit` | number | No | Max results to return (default: 10) |
 | `offset` | number | No | Pagination offset |
@@ -91,53 +90,6 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
     "score": 0.92
   }
 ]
-```
-
-### Navigate
-
-Navigate context around a specific document (e.g., view thread replies, related issues, email chains).
-
-```bash
-curl -X GET "${COLLECTOR_API_URL}/navigate/${DOCUMENT_ID}?direction=children&scope=datapoint&limit=10" \
-  -H "x-api-key: ${COLLECTOR_API_KEY}"
-```
-
-**Parameters:**
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `documentId` | string | Yes | ID of the document (path param) |
-| `direction` | string | Yes | `prev`, `next`, `siblings`, `parent`, `children` |
-| `scope` | string | Yes | `chunk` (within document), `datapoint` (related items), `context` (broader context) |
-| `limit` | number | No | Max related results (default: 10) |
-
-**Response:**
-
-```json
-{
-  "current": {
-    "id": "doc-123",
-    "source": "slack",
-    "content": "Original message...",
-    "metadata": { ... },
-    "score": 1.0
-  },
-  "related": [
-    {
-      "id": "doc-124",
-      "source": "slack",
-      "content": "Reply message...",
-      "metadata": { ... },
-      "score": 0.95
-    }
-  ],
-  "navigation": {
-    "hasPrev": false,
-    "hasNext": true,
-    "parentId": null,
-    "contextType": "thread"
-  }
-}
 ```
 
 ### Index Status
@@ -246,21 +198,6 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
   }'
 ```
 
-### Pending PR Reviews
-
-```bash
-curl -X POST "${COLLECTOR_API_URL}/search" \
-  -H "x-api-key: ${COLLECTOR_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "pull request review requested open",
-    "sources": ["github"],
-    "searchType": "hybrid",
-    "where": { "state": "open" },
-    "limit": 20
-  }'
-```
-
 ### Search a Project/Topic Across All Sources
 
 ```bash
@@ -300,6 +237,5 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
 5. **Use `searchType: "vector"`** when the user's intent is fuzzy or conceptual (e.g., "things related to authentication").
 6. **Paginate large results** using `limit` and `offset`.
 7. **Use `startDate`/`endDate`** aggressively to scope queries to relevant time windows.
-8. **Navigate for context** — after finding a document, use the navigate endpoint to get thread replies, related items, or parent documents.
-9. **Check index status** if results seem stale — the source may not have been synced recently.
-10. **Combine multiple targeted queries** rather than one broad query for better results.
+8. **Check index status** if results seem stale — the source may not have been synced recently.
+9. **Combine multiple targeted queries** rather than one broad query for better results.

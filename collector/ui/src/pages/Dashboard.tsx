@@ -42,7 +42,6 @@ import MailOutlined from '@mui/icons-material/MailOutlined';
 import CloudOutlined from '@mui/icons-material/CloudOutlined';
 import MenuBookOutlined from '@mui/icons-material/MenuBookOutlined';
 import CalendarMonthOutlined from '@mui/icons-material/CalendarMonthOutlined';
-import CodeOutlined from '@mui/icons-material/CodeOutlined';
 import { DataSource, IndexStatus, SOURCE_COLORS, SOURCE_LABELS } from '../types/api';
 import { useLocalSettings } from '../hooks/useLocalSettings';
 
@@ -73,7 +72,6 @@ const SOURCE_ICONS: Record<DataSource, React.ReactElement> = {
   drive: <CloudOutlined />,
   confluence: <MenuBookOutlined />,
   calendar: <CalendarMonthOutlined />,
-  github: <CodeOutlined />,
 };
 
 // ---------------------------------------------------------------------------

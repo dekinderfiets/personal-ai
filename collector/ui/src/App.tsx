@@ -16,7 +16,6 @@ import StorageOutlinedIcon from '@mui/icons-material/StorageOutlined';
 import Dashboard from './pages/Dashboard';
 import Settings from './pages/Settings';
 import Documents from './pages/Documents';
-import Explore from './pages/Explore';
 import Activity from './pages/Activity';
 import { createAppTheme } from './theme';
 import { ColorModeContext } from './context/ColorModeContext';
@@ -155,8 +154,6 @@ function App() {
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/documents" element={<Documents />} />
                   <Route path="/activity" element={<Activity />} />
-                  <Route path="/explore" element={<Explore />} />
-                  <Route path="/explore/:documentId" element={<Explore />} />
                   <Route path="/search" element={<Navigate to="/documents" replace />} />
                 </Routes>
               </Box>

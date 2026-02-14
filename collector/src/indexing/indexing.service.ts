@@ -10,7 +10,6 @@ import { GmailConnector } from '../connectors/gmail.connector';
 import { DriveConnector } from '../connectors/drive.connector';
 import { ConfluenceConnector } from '../connectors/confluence.connector';
 import { CalendarConnector } from '../connectors/calendar.connector';
-import { GitHubConnector } from '../connectors/github.connector';
 import { DataSource, IndexRequest, IndexStatus, IndexDocument, Cursor, ConnectorResult, SourceSettings } from '../types';
 import { SettingsService } from './settings.service';
 import { AnalyticsService } from './analytics.service';
@@ -37,7 +36,6 @@ export class IndexingService {
         drive: DriveConnector,
         confluence: ConfluenceConnector,
         calendar: CalendarConnector,
-        github: GitHubConnector,
     ) {
         this.connectors = new Map<DataSource, BaseConnector>([
             ['jira', jira],
@@ -46,7 +44,6 @@ export class IndexingService {
             ['drive', drive],
             ['confluence', confluence],
             ['calendar', calendar],
-            ['github', github],
         ]);
         this.allSources = Array.from(this.connectors.keys());
     }
@@ -88,10 +85,6 @@ export class IndexingService {
             case 'calendar':
                 request.calendarIds = request.calendarIds || s.calendarIds;
                 break;
-            case 'github':
-                request.repos = request.repos || s.repos;
-                request.indexFiles = request.indexFiles ?? s.indexFiles;
-                break;
         }
     }
 
@@ -102,7 +95,6 @@ export class IndexingService {
             case 'confluence': return (request.spaceKeys || []).sort().join(',');
             case 'drive': return (request.folderIds || []).sort().join(',');
             case 'calendar': return (request.calendarIds || []).sort().join(',');
-            case 'github': return `${(request.repos || []).sort().join(',')};files=${request.indexFiles !== false}`;
             case 'gmail':
                 const g = request.gmailSettings;
                 return JSON.stringify({
@@ -178,9 +170,6 @@ export class IndexingService {
                     metadata.relevance_score = this.computeCalendarRelevance(metadata);
                     break;
 
-                case 'github':
-                    metadata.relevance_score = this.computeGitHubRelevance(metadata);
-                    break;
             }
 
             return { ...doc, metadata } as IndexDocument;
@@ -442,10 +431,6 @@ export class IndexingService {
         return connector.listLabels();
     }
 
-    async getGitHubRepositories(): Promise<any[]> {
-        const connector = this.getConnector('github') as GitHubConnector;
-        return connector.listRepositories();
-    }
 
     // -------------------------------------------------------------------------
     // Private helpers
@@ -482,8 +467,6 @@ export class IndexingService {
         switch (source) {
             case 'jira':
                 return v === this.configService.get<string>('jira.username', '').toLowerCase();
-            case 'github':
-                return v === this.configService.get<string>('github.username', '').toLowerCase();
             case 'drive':
             case 'calendar':
             case 'gmail': {
@@ -596,13 +579,4 @@ export class IndexingService {
         return Math.min(1, score);
     }
 
-    private computeGitHubRelevance(m: any): number {
-        let score = 0.4;
-        if (m.is_author) score += 0.2;
-        if (m.is_assigned_to_me) score += 0.2;
-        const days = this.daysSince(m.updatedAt);
-        if (days < 7) score += 0.15;
-        else if (days < 30) score += 0.05;
-        return Math.min(1, score);
-    }
 }

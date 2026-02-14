@@ -6,7 +6,7 @@ import Redis from 'ioredis';
 import axios from 'axios';
 import { createHash } from 'crypto';
 import { encoding_for_model } from 'tiktoken';
-import { DataSource, IndexDocument, SearchResult, NavigationResult } from '../types';
+import { DataSource, IndexDocument, SearchResult } from '../types';
 
 const CHUNK_SIZE_TOKENS = 512;
 const CHUNK_OVERLAP_TOKENS = 64;
@@ -107,7 +107,6 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
                         project: { type: 'keyword' },
                         channel: { type: 'keyword' },
                         channelId: { type: 'keyword' },
-                        repo: { type: 'keyword' },
                         space: { type: 'keyword' },
                         labels: { type: 'keyword' },
                         status: { type: 'keyword' },
@@ -272,12 +271,6 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
             case 'calendar':
                 if (metadata.start) parts.push(`When: ${metadata.start}`);
                 if (metadata.location) parts.push(`Location: ${metadata.location}`);
-                break;
-            case 'github':
-                if (metadata.repo) parts.push(`Repository: ${metadata.repo}`);
-                if (metadata.type) parts.push(`Type: ${metadata.type}`);
-                if (metadata.state) parts.push(`State: ${metadata.state}`);
-                if (metadata.filePath) parts.push(`File: ${metadata.filePath}`);
                 break;
         }
 
@@ -480,7 +473,7 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
         } = {},
     ): Promise<{ results: SearchResult[]; total: number }> {
         const {
-            sources = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar', 'github'] as DataSource[],
+            sources = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar'] as DataSource[],
             searchType = 'hybrid',
             limit = 20,
             offset = 0,
@@ -668,7 +661,7 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
         const filters: any[] = [];
 
         // Source filter
-        if (sources.length > 0 && sources.length < 7) {
+        if (sources.length > 0 && sources.length < 6) {
             filters.push({ terms: { source: sources } });
         }
 
@@ -790,11 +783,6 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
             case 'confluence': {
                 const labelCount = (m.label_count as number) || 0;
                 return Math.min(1, labelCount * 0.15);
-            }
-            case 'github': {
-                const reactions = (m.reactionCount as number) || 0;
-                const labels = (m.label_count as number) || 0;
-                return Math.min(1, reactions * 0.1 + labels * 0.1);
             }
             default:
                 return 0;
@@ -982,297 +970,6 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
         }
     }
 
-    // ── Navigation ──────────────────────────────────────────────────────
-
-    async navigate(
-        documentId: string,
-        direction: 'prev' | 'next' | 'siblings' | 'parent' | 'children',
-        scope: 'chunk' | 'datapoint' | 'context',
-        limit = 10,
-    ): Promise<NavigationResult> {
-        // Find the document — single index, so just get by ID directly
-        let current: SearchResult | null = null;
-        let currentSource: DataSource | null = null;
-
-        try {
-            const response = await this.client.get({
-                index: this.indexName,
-                id: documentId,
-                _source_excludes: ['embedding'],
-            });
-
-            if (response.found) {
-                const src = (response as any)._source;
-                current = {
-                    id: response._id,
-                    source: src.source,
-                    content: src._originalContent || src.content || '',
-                    metadata: src,
-                    score: 1,
-                };
-                currentSource = src.source;
-            }
-        } catch {
-            // Not found
-        }
-
-        if (!current || !currentSource) {
-            return {
-                current: null,
-                related: [],
-                navigation: { hasPrev: false, hasNext: false, parentId: null, contextType: 'unknown' },
-            };
-        }
-
-        const metadata = current.metadata;
-        let related: SearchResult[] = [];
-
-        if (direction === 'parent' || direction === 'children') {
-            related = await this.navigateStructural(currentSource, current, metadata, direction, limit);
-        } else if (scope === 'chunk') {
-            related = await this.navigateChunks(currentSource, metadata, direction, limit);
-        } else if (scope === 'datapoint') {
-            related = await this.navigateDatapoint(currentSource, metadata, direction, limit);
-        } else if (scope === 'context') {
-            related = await this.navigateContext(currentSource, metadata, direction, limit);
-        }
-
-        const parentId = this.resolveParentDocumentId(currentSource, metadata);
-
-        return {
-            current,
-            related,
-            navigation: {
-                hasPrev: related.length > 0 && (direction === 'prev' || direction === 'siblings'),
-                hasNext: related.length > 0 && (direction === 'next' || direction === 'siblings'),
-                parentId,
-                contextType: this.getContextType(currentSource, metadata),
-                totalSiblings: related.length,
-            },
-        };
-    }
-
-    private resolveParentDocumentId(source: DataSource, metadata: Record<string, unknown>): string | null {
-        const rawParentId = (metadata.parentId as string) || (metadata.parentDocId as string) || null;
-        if (!rawParentId) {
-            if (source === 'drive' && metadata.path) {
-                const path = metadata.path as string;
-                const lastSlash = path.lastIndexOf('/');
-                if (lastSlash > 0) {
-                    return null;
-                }
-            }
-            return null;
-        }
-
-        if (source === 'confluence' && metadata.type === 'comment') {
-            return `confluence_${rawParentId}`;
-        }
-
-        return rawParentId;
-    }
-
-    private async navigateStructural(
-        source: DataSource,
-        current: SearchResult,
-        metadata: Record<string, unknown>,
-        direction: 'parent' | 'children',
-        limit: number,
-    ): Promise<SearchResult[]> {
-        if (direction === 'parent') {
-            const parentDocId = this.resolveParentDocumentId(source, metadata);
-            if (!parentDocId) return [];
-            const parent = await this.getDocument(source, parentDocId);
-            return parent ? [parent] : [];
-        }
-
-        if (direction === 'children') {
-            const docId = this.getLogicalId(source, current, metadata);
-            if (!docId) return [];
-
-            const children = await this.getDocumentsByMetadata(source, { parentId: docId }, limit);
-            const chunks = await this.getDocumentsByMetadata(source, { parentDocId: current.id }, limit);
-            return [...children, ...chunks].slice(0, limit);
-        }
-
-        return [];
-    }
-
-    private getLogicalId(source: DataSource, current: SearchResult, metadata: Record<string, unknown>): string | null {
-        switch (source) {
-            case 'jira':
-                return (metadata.id as string) || current.id;
-            case 'confluence':
-                return (metadata.id as string) || null;
-            case 'slack':
-                return current.id;
-            case 'github':
-                return current.id;
-            default:
-                return (metadata.id as string) || current.id;
-        }
-    }
-
-    private async navigateChunks(
-        source: DataSource,
-        metadata: Record<string, unknown>,
-        direction: string,
-        limit: number,
-    ): Promise<SearchResult[]> {
-        const parentDocId = metadata.parentDocId as string;
-        const chunkIndex = metadata.chunkIndex as number;
-
-        if (parentDocId === undefined || chunkIndex === undefined) return [];
-
-        if (direction === 'prev') {
-            const prevIndex = chunkIndex - 1;
-            if (prevIndex < 0) return [];
-            const id = `${parentDocId}_chunk_${prevIndex}`;
-            const result = await this.getDocument(source, id);
-            return result ? [result] : [];
-        } else if (direction === 'next') {
-            const nextIndex = chunkIndex + 1;
-            const totalChunks = metadata.totalChunks as number;
-            if (nextIndex >= totalChunks) return [];
-            const id = `${parentDocId}_chunk_${nextIndex}`;
-            const result = await this.getDocument(source, id);
-            return result ? [result] : [];
-        } else if (direction === 'siblings') {
-            return this.getDocumentsByMetadata(source, { parentDocId }, limit);
-        }
-
-        return [];
-    }
-
-    private async navigateDatapoint(
-        source: DataSource,
-        metadata: Record<string, unknown>,
-        direction: string,
-        limit: number,
-    ): Promise<SearchResult[]> {
-        const whereClause = this.buildDatapointWhereClause(source, metadata);
-        if (!whereClause) return [];
-
-        const docs = await this.getDocumentsByMetadata(source, whereClause, limit + 10);
-
-        const timestampField = this.getTimestampField(source);
-        docs.sort((a, b) => {
-            const aTime = String(a.metadata[timestampField] || '');
-            const bTime = String(b.metadata[timestampField] || '');
-            return aTime.localeCompare(bTime);
-        });
-
-        const currentId = metadata.id as string;
-        const currentIdx = docs.findIndex(d => d.id === currentId || d.metadata.id === currentId);
-
-        if (direction === 'prev') {
-            return docs.slice(Math.max(0, currentIdx - limit), currentIdx);
-        } else if (direction === 'next') {
-            return docs.slice(currentIdx + 1, currentIdx + 1 + limit);
-        } else if (direction === 'siblings') {
-            return docs.filter(d => d.id !== currentId).slice(0, limit);
-        }
-
-        return [];
-    }
-
-    private async navigateContext(
-        source: DataSource,
-        metadata: Record<string, unknown>,
-        direction: string,
-        limit: number,
-    ): Promise<SearchResult[]> {
-        if (direction === 'siblings') {
-            const rawParentId = (metadata.parentId as string) || (metadata.parentDocId as string);
-            if (rawParentId) {
-                return this.getDocumentsByMetadata(source, { parentId: rawParentId }, limit);
-            }
-        }
-
-        const contextWhere = this.buildContextWhereClause(source, metadata);
-        if (contextWhere) {
-            return this.getDocumentsByMetadata(source, contextWhere, limit);
-        }
-
-        return [];
-    }
-
-    private buildDatapointWhereClause(
-        source: DataSource,
-        metadata: Record<string, unknown>,
-    ): Record<string, unknown> | null {
-        switch (source) {
-            case 'slack':
-                if (metadata.threadTs) return { threadTs: metadata.threadTs as string };
-                if (metadata.channelId) return { channelId: metadata.channelId as string };
-                return null;
-            case 'gmail':
-                if (metadata.threadId) return { threadId: metadata.threadId as string };
-                return null;
-            case 'jira':
-                if (metadata.parentId) return { parentId: metadata.parentId as string };
-                if (metadata.project) return { project: metadata.project as string };
-                return null;
-            case 'drive':
-                if (metadata.folderPath) return { folderPath: metadata.folderPath as string };
-                if (metadata.path) {
-                    const path = metadata.path as string;
-                    const lastSlash = path.lastIndexOf('/');
-                    if (lastSlash > 0) {
-                        return { folderPath: path.substring(0, lastSlash) };
-                    }
-                }
-                return null;
-            case 'confluence':
-                if (metadata.parentId) return { parentId: metadata.parentId as string };
-                if (metadata.space) return { space: metadata.space as string };
-                return null;
-            case 'calendar':
-                return { source: 'calendar' };
-            case 'github':
-                if (metadata.parentId) return { parentId: metadata.parentId as string };
-                if (metadata.repo) return { repo: metadata.repo as string };
-                return null;
-            default:
-                return null;
-        }
-    }
-
-    private buildContextWhereClause(
-        source: DataSource,
-        metadata: Record<string, unknown>,
-    ): Record<string, unknown> | null {
-        switch (source) {
-            case 'slack':
-                if (metadata.channelId) return { channelId: metadata.channelId as string };
-                return null;
-            case 'gmail':
-                if (metadata.threadId) return { threadId: metadata.threadId as string };
-                return null;
-            case 'jira':
-                if (metadata.project) return { project: metadata.project as string };
-                return null;
-            case 'drive':
-                if (metadata.folderPath) return { folderPath: metadata.folderPath as string };
-                if (metadata.path) {
-                    const path = metadata.path as string;
-                    const lastSlash = path.lastIndexOf('/');
-                    if (lastSlash > 0) {
-                        return { folderPath: path.substring(0, lastSlash) };
-                    }
-                }
-                return null;
-            case 'confluence':
-                if (metadata.space) return { space: metadata.space as string };
-                return null;
-            case 'github':
-                if (metadata.repo) return { repo: metadata.repo as string };
-                return null;
-            default:
-                return null;
-        }
-    }
-
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private hitToSearchResult(hit: any): SearchResult {
@@ -1292,40 +989,11 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
             case 'calendar': return 14;
             case 'gmail': return 14;
             case 'jira': return 30;
-            case 'github': return 60;
             case 'confluence': return 90;
             case 'drive': return 90;
             default: return 30;
         }
     }
 
-    private getTimestampField(source: DataSource): string {
-        switch (source) {
-            case 'slack': return 'timestamp';
-            case 'gmail': return 'date';
-            case 'calendar': return 'start';
-            default: return 'updatedAt';
-        }
-    }
 
-    private getContextType(source: DataSource, metadata: Record<string, unknown>): string {
-        switch (source) {
-            case 'slack':
-                return metadata.threadTs ? 'thread' : 'channel';
-            case 'gmail':
-                return 'thread';
-            case 'jira':
-                return metadata.type === 'comment' ? 'issue' : 'project';
-            case 'drive':
-                return 'folder';
-            case 'confluence':
-                return metadata.type === 'comment' ? 'page' : 'space';
-            case 'calendar':
-                return 'calendar';
-            case 'github':
-                return metadata.type === 'pr_comment' || metadata.type === 'pr_review' ? 'pull_request' : 'repository';
-            default:
-                return 'unknown';
-        }
-    }
 }

@@ -35,8 +35,6 @@ export class ConnectorHealthService {
                 case 'drive':
                 case 'calendar':
                     return await this.checkGoogle(source, startTime, checkedAt);
-                case 'github':
-                    return await this.checkGitHub(startTime, checkedAt);
                 default:
                     return {
                         source,
@@ -62,7 +60,7 @@ export class ConnectorHealthService {
     }
 
     async checkAllHealth(): Promise<ConnectorHealth[]> {
-        const sources: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar', 'github'];
+        const sources: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar'];
         return Promise.all(sources.map(s => this.checkHealth(s)));
     }
 
@@ -139,30 +137,6 @@ export class ConnectorHealthService {
             checkedAt,
         };
     }
-
-    private async checkGitHub(startTime: number, checkedAt: string): Promise<ConnectorHealth> {
-        const token = this.configService.get<string>('github.token');
-        const username = this.configService.get<string>('github.username');
-
-        if (!token || !username) {
-            return { source: 'github', configured: false, connected: false, authenticated: false, latencyMs: null, checkedAt };
-        }
-
-        const response = await axios.get('https://api.github.com/user', {
-            headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github.v3+json' },
-            timeout: 10000,
-        });
-
-        return {
-            source: 'github',
-            configured: true,
-            connected: true,
-            authenticated: response.status === 200,
-            latencyMs: Date.now() - startTime,
-            checkedAt,
-        };
-    }
-
     private async checkGoogle(source: DataSource, startTime: number, checkedAt: string): Promise<ConnectorHealth> {
         const clientId = this.configService.get<string>('google.clientId');
         const clientSecret = this.configService.get<string>('google.clientSecret');

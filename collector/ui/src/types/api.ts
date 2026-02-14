@@ -1,6 +1,6 @@
-export type DataSource = 'jira' | 'slack' | 'gmail' | 'drive' | 'confluence' | 'calendar' | 'github';
+export type DataSource = 'jira' | 'slack' | 'gmail' | 'drive' | 'confluence' | 'calendar';
 
-export const ALL_SOURCES: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar', 'github'];
+export const ALL_SOURCES: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar'];
 
 export const DEFAULT_SEARCH_SOURCES: DataSource[] = ALL_SOURCES.filter(s => s !== 'calendar');
 
@@ -11,7 +11,6 @@ export const SOURCE_COLORS: Record<DataSource, string> = {
   drive: '#0F9D58',
   confluence: '#172B4D',
   calendar: '#4285F4',
-  github: '#6e5494',
 };
 
 export const SOURCE_LABELS: Record<DataSource, string> = {
@@ -21,7 +20,6 @@ export const SOURCE_LABELS: Record<DataSource, string> = {
   drive: 'Google Drive',
   confluence: 'Confluence',
   calendar: 'Calendar',
-  github: 'GitHub',
 };
 
 // MUI icon names mapped per source (import these in components)
@@ -32,7 +30,6 @@ export const SOURCE_ICON_NAMES: Record<DataSource, string> = {
   drive: 'Cloud',
   confluence: 'MenuBook',
   calendar: 'CalendarMonth',
-  github: 'Code',
 };
 
 export interface SearchRequest {
@@ -55,17 +52,6 @@ export interface SearchResult {
   source: DataSource;
 }
 
-export interface NavigationResponse {
-  current: SearchResult | null;
-  related: SearchResult[];
-  navigation: {
-    hasPrev: boolean;
-    hasNext: boolean;
-    parentId?: string | null;
-    contextType?: string;
-    totalSiblings?: number;
-  };
-}
 
 export interface IndexStatus {
   source: string;
@@ -87,8 +73,6 @@ export interface ConnectorSettings {
   folderIds?: string[];
   spaceKeys?: string[];
   calendarIds?: string[];
-  repos?: string[];
-  indexFiles?: boolean;
   startDate?: string;
   endDate?: string;
   sinceLast?: boolean;

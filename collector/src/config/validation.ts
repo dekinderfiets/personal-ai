@@ -62,13 +62,6 @@ class EnvironmentVariables {
     @IsOptional()
     API_KEY: string;
 
-    @IsString()
-    @IsOptional()
-    GITHUB_TOKEN: string;
-
-    @IsString()
-    @IsOptional()
-    GITHUB_USERNAME: string;
 
     @IsString()
     @IsOptional()
