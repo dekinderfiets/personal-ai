@@ -370,7 +370,9 @@ const Settings: React.FC = () => {
         return { spaceKeys: settings.spaceKeys };
       case 'drive':
         return {
+          indexMyDrive: settings.indexMyDrive,
           folderIds: settings.folderIds,
+          indexSharedDrives: settings.indexSharedDrives,
           sharedDriveFolderIds: settings.sharedDriveFolderIds,
           sharedWithMe: settings.sharedWithMe,
           starred: settings.starred,
@@ -719,37 +721,46 @@ const Settings: React.FC = () => {
       {/* My Drive tab */}
       {driveTab === 0 && (
         <Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-            Browse and select specific folders to index, or leave empty to index all files.
-            Click a folder to select it, click the arrow to expand.
-          </Typography>
-          {loadingDiscovery ? (
-            <LinearProgress sx={{ my: 2 }} />
-          ) : driveFolders.length > 0 ? (
-            <Paper variant="outlined" sx={{ maxHeight: 360, overflow: 'auto', border: `1px solid ${theme.palette.divider}`, borderRadius: 1 }}>
-              {renderFolderTree(driveFolders)}
-            </Paper>
-          ) : (
-            <Alert severity="info" sx={{ mt: 1 }}>No folders found. Check your Google Drive connection.</Alert>
-          )}
-          {selectedFolderIds.size > 0 && (
-            <Box sx={{ mt: 1.5 }}>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 0.75 }}>
-                {selectedFolderIds.size} folder{selectedFolderIds.size > 1 ? 's' : ''} selected
+          <FormControlLabel
+            control={<Switch checked={currentSettings?.indexMyDrive || false} onChange={(e) => handleSettingChange('indexMyDrive', e.target.checked)} />}
+            label={<Typography variant="body2">Index My Drive files</Typography>}
+            sx={{ ml: 0, mb: 1.5 }}
+          />
+          {currentSettings?.indexMyDrive && (
+            <>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                Select specific folders to index, or leave empty to index all files.
+                Click a folder to select it, click the arrow to expand.
               </Typography>
-              <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                {Array.from(selectedFolderIds).map(id => {
-                  const findName = (nodes: FolderNode[]): string => {
-                    for (const n of nodes) {
-                      if (n.id === id) return n.name;
-                      if (n.children) { const r = findName(n.children); if (r) return r; }
-                    }
-                    return id;
-                  };
-                  return <Chip key={id} label={findName(driveFolders)} onDelete={() => toggleFolderSelect(id)} size="small" />;
-                })}
-              </Box>
-            </Box>
+              {loadingDiscovery ? (
+                <LinearProgress sx={{ my: 2 }} />
+              ) : driveFolders.length > 0 ? (
+                <Paper variant="outlined" sx={{ maxHeight: 360, overflow: 'auto', border: `1px solid ${theme.palette.divider}`, borderRadius: 1 }}>
+                  {renderFolderTree(driveFolders)}
+                </Paper>
+              ) : (
+                <Alert severity="info" sx={{ mt: 1 }}>No folders found. Check your Google Drive connection.</Alert>
+              )}
+              {selectedFolderIds.size > 0 && (
+                <Box sx={{ mt: 1.5 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 0.75 }}>
+                    {selectedFolderIds.size} folder{selectedFolderIds.size > 1 ? 's' : ''} selected
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                    {Array.from(selectedFolderIds).map(id => {
+                      const findName = (nodes: FolderNode[]): string => {
+                        for (const n of nodes) {
+                          if (n.id === id) return n.name;
+                          if (n.children) { const r = findName(n.children); if (r) return r; }
+                        }
+                        return id;
+                      };
+                      return <Chip key={id} label={findName(driveFolders)} onDelete={() => toggleFolderSelect(id)} size="small" />;
+                    })}
+                  </Box>
+                </Box>
+              )}
+            </>
           )}
         </Box>
       )}
@@ -757,84 +768,93 @@ const Settings: React.FC = () => {
       {/* Shared Drives tab */}
       {driveTab === 1 && (
         <Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-            Browse shared drives and select folders to index.
-          </Typography>
-          {loadingDiscovery ? (
-            <LinearProgress sx={{ my: 2 }} />
-          ) : sharedDrives.length > 0 ? (
-            <Paper variant="outlined" sx={{ maxHeight: 360, overflow: 'auto', border: `1px solid ${theme.palette.divider}`, borderRadius: 1 }}>
-              <List disablePadding>
-                {sharedDrives.map(drive => {
-                  const isExpanded = expandedSharedDriveFolders.has(drive.id);
-                  const isLoading = loadingSharedDriveFolders.has(drive.id);
-                  return (
-                    <React.Fragment key={drive.id}>
-                      <ListItemButton
-                        sx={{ py: 0.75, borderRadius: 1, mb: 0.25 }}
-                        onClick={() => {
-                          const wasExpanded = expandedSharedDriveFolders.has(drive.id);
-                          setExpandedSharedDriveFolders(prev => {
-                            const next = new Set(prev);
-                            if (wasExpanded) next.delete(drive.id);
-                            else next.add(drive.id);
-                            return next;
-                          });
-                          if (!wasExpanded && !sharedDriveFolders[drive.id]) {
-                            loadSharedDriveRootFolders(drive.id);
-                          }
-                        }}
-                      >
-                        <ListItemIcon sx={{ minWidth: 28 }}>
-                          {isLoading ? <CircularProgress size={14} /> : isExpanded ? <ExpandMoreIcon sx={{ fontSize: 18 }} /> : <ChevronRightIcon sx={{ fontSize: 18 }} />}
-                        </ListItemIcon>
-                        <ListItemIcon sx={{ minWidth: 28 }}>
-                          <DriveFileMoveOutlinedIcon sx={{ fontSize: 18, color: theme.palette.text.secondary }} />
-                        </ListItemIcon>
-                        <ListItemText primary={drive.name} primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }} />
-                      </ListItemButton>
-                      <Collapse in={isExpanded} timeout="auto" unmountOnExit>
-                        {isLoading ? (
-                          <Box sx={{ pl: 5, py: 1 }}><LinearProgress sx={{ width: 120 }} /></Box>
-                        ) : sharedDriveFolders[drive.id]?.length > 0 ? (
-                          renderSharedDriveFolderTree(sharedDriveFolders[drive.id], drive.id, 1)
-                        ) : sharedDriveFolders[drive.id] ? (
-                          <Typography variant="caption" color="text.secondary" sx={{ pl: 5, py: 0.5, display: 'block' }}>No folders found</Typography>
-                        ) : null}
-                      </Collapse>
-                    </React.Fragment>
-                  );
-                })}
-              </List>
-            </Paper>
-          ) : (
-            <Alert severity="info" sx={{ mt: 1 }}>No shared drives found.</Alert>
-          )}
-          {selectedSharedDriveFolderIds.size > 0 && (
-            <Box sx={{ mt: 1.5 }}>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 0.75 }}>
-                {selectedSharedDriveFolderIds.size} folder{selectedSharedDriveFolderIds.size > 1 ? 's' : ''} selected
+          <FormControlLabel
+            control={<Switch checked={currentSettings?.indexSharedDrives || false} onChange={(e) => handleSettingChange('indexSharedDrives', e.target.checked)} />}
+            label={<Typography variant="body2">Index Shared Drive files</Typography>}
+            sx={{ ml: 0, mb: 1.5 }}
+          />
+          {currentSettings?.indexSharedDrives && (
+            <>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                Browse shared drives and select folders to index.
               </Typography>
-              <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                {Array.from(selectedSharedDriveFolderIds).map(id => {
-                  const findName = (drivesMap: Record<string, FolderNode[]>): string => {
-                    for (const nodes of Object.values(drivesMap)) {
-                      const search = (ns: FolderNode[]): string => {
-                        for (const n of ns) {
-                          if (n.id === id) return n.name;
-                          if (n.children) { const r = search(n.children); if (r) return r; }
+              {loadingDiscovery ? (
+                <LinearProgress sx={{ my: 2 }} />
+              ) : sharedDrives.length > 0 ? (
+                <Paper variant="outlined" sx={{ maxHeight: 360, overflow: 'auto', border: `1px solid ${theme.palette.divider}`, borderRadius: 1 }}>
+                  <List disablePadding>
+                    {sharedDrives.map(drive => {
+                      const isExpanded = expandedSharedDriveFolders.has(drive.id);
+                      const isLoading = loadingSharedDriveFolders.has(drive.id);
+                      return (
+                        <React.Fragment key={drive.id}>
+                          <ListItemButton
+                            sx={{ py: 0.75, borderRadius: 1, mb: 0.25 }}
+                            onClick={() => {
+                              const wasExpanded = expandedSharedDriveFolders.has(drive.id);
+                              setExpandedSharedDriveFolders(prev => {
+                                const next = new Set(prev);
+                                if (wasExpanded) next.delete(drive.id);
+                                else next.add(drive.id);
+                                return next;
+                              });
+                              if (!wasExpanded && !sharedDriveFolders[drive.id]) {
+                                loadSharedDriveRootFolders(drive.id);
+                              }
+                            }}
+                          >
+                            <ListItemIcon sx={{ minWidth: 28 }}>
+                              {isLoading ? <CircularProgress size={14} /> : isExpanded ? <ExpandMoreIcon sx={{ fontSize: 18 }} /> : <ChevronRightIcon sx={{ fontSize: 18 }} />}
+                            </ListItemIcon>
+                            <ListItemIcon sx={{ minWidth: 28 }}>
+                              <DriveFileMoveOutlinedIcon sx={{ fontSize: 18, color: theme.palette.text.secondary }} />
+                            </ListItemIcon>
+                            <ListItemText primary={drive.name} primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }} />
+                          </ListItemButton>
+                          <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                            {isLoading ? (
+                              <Box sx={{ pl: 5, py: 1 }}><LinearProgress sx={{ width: 120 }} /></Box>
+                            ) : sharedDriveFolders[drive.id]?.length > 0 ? (
+                              renderSharedDriveFolderTree(sharedDriveFolders[drive.id], drive.id, 1)
+                            ) : sharedDriveFolders[drive.id] ? (
+                              <Typography variant="caption" color="text.secondary" sx={{ pl: 5, py: 0.5, display: 'block' }}>No folders found</Typography>
+                            ) : null}
+                          </Collapse>
+                        </React.Fragment>
+                      );
+                    })}
+                  </List>
+                </Paper>
+              ) : (
+                <Alert severity="info" sx={{ mt: 1 }}>No shared drives found.</Alert>
+              )}
+              {selectedSharedDriveFolderIds.size > 0 && (
+                <Box sx={{ mt: 1.5 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 0.75 }}>
+                    {selectedSharedDriveFolderIds.size} folder{selectedSharedDriveFolderIds.size > 1 ? 's' : ''} selected
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                    {Array.from(selectedSharedDriveFolderIds).map(id => {
+                      const findName = (drivesMap: Record<string, FolderNode[]>): string => {
+                        for (const nodes of Object.values(drivesMap)) {
+                          const search = (ns: FolderNode[]): string => {
+                            for (const n of ns) {
+                              if (n.id === id) return n.name;
+                              if (n.children) { const r = search(n.children); if (r) return r; }
+                            }
+                            return '';
+                          };
+                          const found = search(nodes);
+                          if (found) return found;
                         }
-                        return '';
+                        return id;
                       };
-                      const found = search(nodes);
-                      if (found) return found;
-                    }
-                    return id;
-                  };
-                  return <Chip key={id} label={findName(sharedDriveFolders)} onDelete={() => toggleSharedDriveFolderSelect(id)} size="small" />;
-                })}
-              </Box>
-            </Box>
+                      return <Chip key={id} label={findName(sharedDriveFolders)} onDelete={() => toggleSharedDriveFolderSelect(id)} size="small" />;
+                    })}
+                  </Box>
+                </Box>
+              )}
+            </>
           )}
         </Box>
       )}

@@ -195,8 +195,10 @@ export interface IndexRequest {
     projectKeys?: string[];    // For Jira
     channelIds?: string[];     // For Slack
     spaceKeys?: string[];      // For Confluence
-    folderIds?: string[];      // For Drive
-    sharedDriveFolderIds?: string[];  // For Drive — Shared Drive folders
+    indexMyDrive?: boolean;    // For Drive — include My Drive files
+    folderIds?: string[];      // For Drive — specific My Drive folders
+    indexSharedDrives?: boolean;  // For Drive — include Shared Drive files
+    sharedDriveFolderIds?: string[];  // For Drive — specific Shared Drive folders
     sharedWithMe?: boolean;    // For Drive — include "shared with me" files
     starred?: boolean;         // For Drive — include starred files
     gmailSettings?: GmailSettings;

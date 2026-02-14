@@ -82,7 +82,9 @@ export interface ConnectorSettings {
   labels?: string[];
   domains?: string[];
   senders?: string[];
+  indexMyDrive?: boolean;              // Drive — include My Drive files
   folderIds?: string[];
+  indexSharedDrives?: boolean;         // Drive — include Shared Drive files
   sharedDriveFolderIds?: string[];  // Drive — Shared Drive folder selections
   sharedWithMe?: boolean;            // Drive — include shared with me
   starred?: boolean;                 // Drive — include starred

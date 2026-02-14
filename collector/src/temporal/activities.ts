@@ -22,6 +22,30 @@ export interface ActivityDeps {
     analyticsService: AnalyticsService;
 }
 
+/**
+ * Run a long-running operation with periodic heartbeats.
+ * Heartbeats every 30s to prevent Temporal's heartbeat timeout from
+ * killing the activity, and to receive cancellation signals promptly.
+ */
+async function withHeartbeat<T>(detail: string, fn: () => Promise<T>): Promise<T> {
+    const interval = setInterval(() => {
+        try {
+            Context.current().heartbeat(detail);
+        } catch (_err) {
+            // CancelledFailure from heartbeat — stop the interval
+            // and let it propagate when the main fn next yields
+            clearInterval(interval);
+        }
+    }, 30_000);
+
+    try {
+        Context.current().heartbeat(detail);
+        return await fn();
+    } finally {
+        clearInterval(interval);
+    }
+}
+
 export function createActivities(deps: ActivityDeps) {
     const { indexingService, settingsService, cursorService, analyticsService } = deps;
 
@@ -65,11 +89,8 @@ export function createActivities(deps: ActivityDeps) {
                 throw new Error(`Connector for ${source} is not configured.`);
             }
 
-            Context.current().heartbeat('fetching');
-
-            const result: ConnectorResult = await connector.fetch(
-                cursor as any,
-                request as IndexRequest,
+            const result = await withHeartbeat(`fetching:${source}`, () =>
+                connector.fetch(cursor as any, request as IndexRequest),
             );
 
             return {
@@ -91,14 +112,10 @@ export function createActivities(deps: ActivityDeps) {
             documents: FetchBatchResult['documents'],
             force: boolean,
         ): Promise<ProcessBatchResult> {
-            Context.current().heartbeat('processing');
-
             const indexDocs = documents as unknown as IndexDocument[];
             const docsWithWeights = indexingService.addRelevanceWeights(source, indexDocs);
-            const processed = await indexingService.processIndexingBatch(
-                source,
-                docsWithWeights,
-                force,
+            const processed = await withHeartbeat(`processing:${source}`, () =>
+                indexingService.processIndexingBatch(source, docsWithWeights, force),
             );
             return { processed };
         },

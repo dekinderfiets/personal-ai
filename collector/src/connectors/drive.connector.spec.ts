@@ -88,7 +88,7 @@ describe('DriveConnector', () => {
             mockFileProcessor.process.mockResolvedValue({ content: 'File content here', chunks: undefined, language: undefined });
 
             mockedAxios.get.mockImplementation(async (url: string, config?: any) => {
-                if (url === 'https://www.googleapis.com/drive/v3/files' && !config?.params?.q?.includes('in parents')) {
+                if (url === 'https://www.googleapis.com/drive/v3/files' && config?.params?.pageSize) {
                     return {
                         data: {
                             files: [{

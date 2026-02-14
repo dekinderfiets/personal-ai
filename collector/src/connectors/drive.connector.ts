@@ -58,10 +58,29 @@ export class DriveConnector extends BaseConnector {
             const lastSync = cursor?.lastSync;
             const pageToken = cursor?.syncToken;
 
-            const hasMyDriveFolders = !!request.folderIds?.length;
-            const hasSharedDriveFolders = !!request.sharedDriveFolderIds?.length;
-            const hasSharedWithMe = !!request.sharedWithMe;
-            const hasStarred = !!request.starred;
+            // Determine which Drive sources are enabled.
+            // If any explicit toggle is set, use them; otherwise fall back to legacy
+            // behavior where no flags = index everything.
+            const hasExplicitFlags =
+                request.indexMyDrive !== undefined ||
+                request.indexSharedDrives !== undefined ||
+                request.sharedWithMe !== undefined ||
+                request.starred !== undefined;
+
+            const wantsMyDrive = hasExplicitFlags
+                ? (request.indexMyDrive ?? !!request.folderIds?.length)
+                : true; // legacy: index My Drive by default
+            const wantsSharedDrives = hasExplicitFlags
+                ? (request.indexSharedDrives ?? !!request.sharedDriveFolderIds?.length)
+                : !!request.sharedDriveFolderIds?.length;
+            const wantsSharedWithMe = !!request.sharedWithMe;
+            const wantsStarred = !!request.starred;
+
+            // If explicit flags are used and nothing is enabled, skip
+            if (hasExplicitFlags && !wantsMyDrive && !wantsSharedDrives && !wantsSharedWithMe && !wantsStarred) {
+                this.logger.log('No Drive sources enabled, skipping');
+                return { documents: [], newCursor: {}, hasMore: false };
+            }
 
             // Base conditions applied to ALL queries
             const baseConditions = ["mimeType != 'application/vnd.google-apps.folder'", 'trashed = false'];
@@ -72,23 +91,31 @@ export class DriveConnector extends BaseConnector {
             // Build source-specific OR clauses
             const sourceClauses: string[] = [];
 
-            if (hasMyDriveFolders) {
-                const allFolderIds = await this.resolveAllSubfolderIds(token, request.folderIds!);
-                const folderConditions = allFolderIds.map(id => `'${id}' in parents`).join(' or ');
-                sourceClauses.push(`(${folderConditions})`);
+            if (wantsMyDrive) {
+                if (request.folderIds?.length) {
+                    const allFolderIds = await this.resolveAllSubfolderIds(token, request.folderIds);
+                    const folderConditions = allFolderIds.map(id => `'${id}' in parents`).join(' or ');
+                    sourceClauses.push(`(${folderConditions})`);
+                } else {
+                    // No specific folders → index all My Drive files
+                    sourceClauses.push("'root' in parents or 'me' in owners");
+                }
             }
 
-            if (hasSharedDriveFolders) {
-                const allFolderIds = await this.resolveAllSubfolderIds(token, request.sharedDriveFolderIds!);
-                const folderConditions = allFolderIds.map(id => `'${id}' in parents`).join(' or ');
-                sourceClauses.push(`(${folderConditions})`);
+            if (wantsSharedDrives) {
+                if (request.sharedDriveFolderIds?.length) {
+                    const allFolderIds = await this.resolveAllSubfolderIds(token, request.sharedDriveFolderIds);
+                    const folderConditions = allFolderIds.map(id => `'${id}' in parents`).join(' or ');
+                    sourceClauses.push(`(${folderConditions})`);
+                }
+                // Without specific folders, shared drive files are only reachable via folder selections
             }
 
-            if (hasSharedWithMe) {
+            if (wantsSharedWithMe) {
                 sourceClauses.push('sharedWithMe = true');
             }
 
-            if (hasStarred) {
+            if (wantsStarred) {
                 sourceClauses.push('starred = true');
             }
 
@@ -98,7 +125,7 @@ export class DriveConnector extends BaseConnector {
                 conditions.push(`(${sourceClauses.join(' or ')})`);
             }
 
-            const needsAllDrives = hasSharedDriveFolders || hasSharedWithMe || hasStarred;
+            const needsAllDrives = wantsSharedDrives || wantsSharedWithMe || wantsStarred;
             const params: Record<string, any> = {
                 q: conditions.join(' and '),
                 pageSize: 100,
@@ -109,7 +136,7 @@ export class DriveConnector extends BaseConnector {
             if (needsAllDrives) {
                 params.includeItemsFromAllDrives = true;
                 params.supportsAllDrives = true;
-                if (!hasMyDriveFolders && !hasSharedDriveFolders) {
+                if (!request.folderIds?.length && !request.sharedDriveFolderIds?.length) {
                     params.corpora = 'allDrives';
                 }
             }

@@ -65,7 +65,9 @@ export class IndexingService {
         const s = settings as any;
         switch (source) {
             case 'drive':
+                request.indexMyDrive = request.indexMyDrive ?? s.indexMyDrive;
                 request.folderIds = request.folderIds || s.folderIds;
+                request.indexSharedDrives = request.indexSharedDrives ?? s.indexSharedDrives;
                 request.sharedDriveFolderIds = request.sharedDriveFolderIds || s.sharedDriveFolderIds;
                 request.sharedWithMe = request.sharedWithMe ?? s.sharedWithMe;
                 request.starred = request.starred ?? s.starred;
@@ -99,7 +101,9 @@ export class IndexingService {
             case 'confluence': return (request.spaceKeys || []).sort().join(',');
             case 'drive': {
                 const parts = [
+                    request.indexMyDrive ? 'myDrive' : '',
                     (request.folderIds || []).sort().join(','),
+                    request.indexSharedDrives ? 'sharedDrives' : '',
                     (request.sharedDriveFolderIds || []).sort().join(','),
                     request.sharedWithMe ? 'swm' : '',
                     request.starred ? 'star' : '',
