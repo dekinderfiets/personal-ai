@@ -8,7 +8,7 @@ jest.mock('tiktoken', () => ({
 
 import { FileProcessorService } from './file-processor.service';
 
-// Mock child_process for pdftotext/pandoc
+// Mock child_process for markitdown
 jest.mock('child_process', () => ({
     exec: jest.fn(),
 }));
@@ -73,7 +73,7 @@ describe('FileProcessorService', () => {
             expect(result).toBeNull();
         });
 
-        it('should convert PDF buffer to text via pdftotext', async () => {
+        it('should convert PDF buffer to markdown via markitdown', async () => {
             const pdfBuffer = Buffer.from('fake-pdf');
             (exec as unknown as jest.Mock).mockImplementation((_cmd, cb) => cb(null, { stdout: 'extracted text', stderr: '' }));
             mockChunkingService.isCodeFile.mockReturnValue(false);
@@ -86,7 +86,7 @@ describe('FileProcessorService', () => {
             expect(result!.content).toBe('extracted text');
         });
 
-        it('should convert DOCX buffer to markdown via pandoc', async () => {
+        it('should convert DOCX buffer to markdown via markitdown', async () => {
             const docxBuffer = Buffer.from('fake-docx');
             (exec as unknown as jest.Mock).mockImplementation((_cmd, cb) => cb(null, { stdout: '# Title\n\nContent', stderr: '' }));
             mockChunkingService.isCodeFile.mockReturnValue(false);

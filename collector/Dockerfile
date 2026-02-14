@@ -1,7 +1,9 @@
 # Stage: Development (hot-reload)
 FROM node:20-slim AS development
 
-RUN apt-get update && apt-get install -y --no-install-recommends pandoc poppler-utils && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip && \
+    pip3 install --break-system-packages markitdown && \
+    rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 
 WORKDIR /app
@@ -39,7 +41,9 @@ RUN npm run build
 # Stage 2: Production
 FROM node:20-slim AS production
 
-RUN apt-get update && apt-get install -y --no-install-recommends pandoc poppler-utils && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip && \
+    pip3 install --break-system-packages markitdown && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
