@@ -3,13 +3,22 @@ services:
     build: services/n8n/license
     container_name: n8n-license-server
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3456/v1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   n8n:
     image: n8nio/n8n:latest
     container_name: personal-ai_app
     depends_on:
-      - redis
-      - postgres
+      license-server:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_started
     ports:
       - "127.0.0.1:5678:5678"
     env_file: services/n8n/.env
@@ -17,23 +26,29 @@ services:
       - n8n_data:/home/node/.n8n
       - ./storage:/home/node/.n8n-files/storage
       - ./framework/context:/home/node/.n8n-files/framework/context
-      - ./n8n-nodes-token-aware-memory:/opt/custom-nodes/n8n-nodes-token-aware-memory
       - ./services/n8n/license:/license
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   n8n_worker:
     image: n8nio/n8n:latest
     container_name: personal-ai_worker
     depends_on:
-      - redis
-      - n8n
+      n8n:
+        condition: service_healthy
+      redis:
+        condition: service_started
     command: [ "worker", "--concurrency", "20" ]
     env_file: services/n8n/.env
     volumes:
       - n8n_data:/home/node/.n8n
       - ./storage:/home/node/.n8n-files/storage
       - ./framework/context:/home/node/.n8n-files/framework/context
-      - ./n8n-nodes-token-aware-memory:/opt/custom-nodes/n8n-nodes-token-aware-memory
       - ./services/n8n/license:/license
     restart: unless-stopped
 
@@ -46,7 +61,8 @@ services:
     volumes:
       - ./services/n8n/license:/license
     depends_on:
-      - n8n
+      n8n:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

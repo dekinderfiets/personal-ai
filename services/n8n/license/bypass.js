@@ -183,16 +183,28 @@ Module._load = function (request, parent, isMain) {
     return exports;
 };
 
-// Periodic scan for objects already in memory
-setInterval(() => {
+// Periodic scan for objects already in memory (stops once both are patched)
+const _patchInterval = setInterval(() => {
     try {
+        let foundManager = false;
+        let foundLicense = false;
         Object.keys(require.cache).forEach(key => {
             const exports = require.cache[key].exports;
             if (exports) {
-                if (exports.LicenseManager) patchClass(exports.LicenseManager, 'LicenseManager (Cache)');
-                if (exports.License) patchClass(exports.License, 'License (Cache)');
+                if (exports.LicenseManager) {
+                    patchClass(exports.LicenseManager, 'LicenseManager (Cache)');
+                    foundManager = true;
+                }
+                if (exports.License) {
+                    patchClass(exports.License, 'License (Cache)');
+                    foundLicense = true;
+                }
             }
         });
+        if (foundManager && foundLicense) {
+            clearInterval(_patchInterval);
+            console.log('\x1b[32m%s\x1b[0m', '[License Bypass] Both classes patched, cache scan stopped.');
+        }
     } catch (e) { }
 }, 2000);
 
