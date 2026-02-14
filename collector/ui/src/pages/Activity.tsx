@@ -237,35 +237,55 @@ const Activity: React.FC = () => {
     fetchStats();
     fetchWorkflows();
 
-    // SSE connection for real-time updates
-    try {
-      const es = new EventSource(`${API_BASE_URL}/events/indexing`);
-      eventSourceRef.current = es;
+    // SSE connection for real-time updates with auto-reconnect
+    let reconnectTimeout: ReturnType<typeof setTimeout>;
+    let reconnectDelay = 1000;
+    const maxReconnectDelay = 30000;
 
-      es.onopen = () => setSseConnected(true);
-      es.onmessage = () => {
-        const now = Date.now();
-        if (now - lastSseFetchRef.current < 5000) return;
-        lastSseFetchRef.current = now;
+    const connectSSE = () => {
+      try {
+        const es = new EventSource(`${API_BASE_URL}/events/indexing`);
+        eventSourceRef.current = es;
+
+        es.onopen = () => {
+          setSseConnected(true);
+          reconnectDelay = 1000; // Reset backoff on successful connection
+        };
+        es.onmessage = () => {
+          const now = Date.now();
+          if (now - lastSseFetchRef.current < 5000) return;
+          lastSseFetchRef.current = now;
+          fetchStats();
+          fetchWorkflows();
+        };
+        es.onerror = () => {
+          setSseConnected(false);
+          es.close();
+          eventSourceRef.current = null;
+          // Auto-reconnect with exponential backoff
+          reconnectTimeout = setTimeout(() => {
+            reconnectDelay = Math.min(reconnectDelay * 2, maxReconnectDelay);
+            connectSSE();
+          }, reconnectDelay);
+        };
+      } catch {
+        setSseConnected(false);
+      }
+    };
+
+    connectSSE();
+
+    // Polling fallback - only when SSE is not connected
+    const interval = setInterval(() => {
+      if (!eventSourceRef.current || eventSourceRef.current.readyState !== EventSource.OPEN) {
         fetchStats();
         fetchWorkflows();
-      };
-      es.onerror = () => {
-        setSseConnected(false);
-        es.close();
-      };
-    } catch {
-      setSseConnected(false);
-    }
-
-    // Polling fallback
-    const interval = setInterval(() => {
-      fetchStats();
-      fetchWorkflows();
+      }
     }, 10000);
 
     return () => {
       clearInterval(interval);
+      clearTimeout(reconnectTimeout);
       eventSourceRef.current?.close();
     };
   }, []);

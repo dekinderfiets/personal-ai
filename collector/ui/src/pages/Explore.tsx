@@ -19,9 +19,18 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import PersonIcon from '@mui/icons-material/Person';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import { useParams, useNavigate } from 'react-router-dom';
+import Markdown from 'react-markdown';
 import { SearchResult, SOURCE_COLORS, SOURCE_LABELS } from '../types/api';
 
 const API_BASE_URL = '/api/v1';
+
+const HIDDEN_METADATA_KEYS = new Set([
+  'search_context', 'content', 'id', 'chunkId', 'chunkIndex', 'totalChunks',
+  'timestamp', 'source', 'title', 'subject', 'name', 'url',
+  '_contentHash', 'createdAtTs', 'updatedAtTs', 'relevance_score',
+  'priority_weight', 'days_since_update', 'is_assigned_to_me',
+  'linkedIssues',
+]);
 
 type Direction = 'prev' | 'next' | 'siblings' | 'parent' | 'children';
 type Scope = 'chunk' | 'datapoint' | 'context';
@@ -46,14 +55,17 @@ const Explore: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const pendingDirectionRef = useRef<Direction>('siblings');
+  const scopeRef = useRef<Scope>(scope);
+  scopeRef.current = scope;
 
-  const fetchNavigation = useCallback(async (docId: string, direction: Direction = 'siblings', navScope: Scope = scope) => {
+  const fetchNavigation = useCallback(async (docId: string, direction: Direction = 'siblings', navScope?: Scope) => {
+    const effectiveScope = navScope ?? scopeRef.current;
     setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams({
         direction,
-        scope: navScope,
+        scope: effectiveScope,
         limit: '10',
       });
       const response = await fetch(`${API_BASE_URL}/search/navigate/${encodeURIComponent(docId)}?${params}`);
@@ -68,7 +80,7 @@ const Explore: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [scope]);
+  }, []);
 
   useEffect(() => {
     if (documentId) {
@@ -530,14 +542,30 @@ const Explore: React.FC = () => {
                   borderRadius: 1,
                   backgroundColor: alpha(theme.palette.background.default, 0.6),
                   border: `1px solid ${theme.palette.divider}`,
+                  lineHeight: 1.7,
+                  wordBreak: 'break-word',
+                  '& h1': { fontSize: '1.4rem', mt: 2, mb: 1 },
+                  '& h2': { fontSize: '1.2rem', mt: 2, mb: 1 },
+                  '& h3': { fontSize: '1.05rem', mt: 1.5, mb: 0.5 },
+                  '& p': { my: 1 },
+                  '& pre': {
+                    p: 1.5,
+                    borderRadius: 1,
+                    backgroundColor: alpha(theme.palette.common.black, 0.2),
+                    overflow: 'auto',
+                  },
+                  '& code': { fontSize: '0.85em' },
+                  '& a': { color: theme.palette.primary.main },
+                  '& ul, & ol': { pl: 3 },
+                  '& table': { borderCollapse: 'collapse', width: '100%' },
+                  '& th, & td': {
+                    border: `1px solid ${theme.palette.divider}`,
+                    p: 1,
+                    textAlign: 'left',
+                  },
                 })}
               >
-                <Typography
-                  variant="body1"
-                  sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.7, wordBreak: 'break-word' }}
-                >
-                  {current.content}
-                </Typography>
+                <Markdown>{current.content}</Markdown>
               </Box>
 
               {/* Metadata Section */}
@@ -548,7 +576,7 @@ const Explore: React.FC = () => {
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
                   {Object.entries(current.metadata).map(([key, value]) => {
                     if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') return null;
-                    if (['search_context', 'content'].includes(key)) return null;
+                    if (HIDDEN_METADATA_KEYS.has(key)) return null;
                     const strVal = String(value);
                     if (strVal.length > 80) return null;
                     return (

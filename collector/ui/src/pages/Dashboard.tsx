@@ -14,6 +14,11 @@ import {
   MenuItem,
   ListItemIcon,
   ListItemText,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Snackbar,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
@@ -202,6 +207,13 @@ const Dashboard: React.FC = () => {
   const [menuSource, setMenuSource] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { getSettings } = useLocalSettings();
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ open: false, title: '', message: '', onConfirm: () => {} });
+  const [snackMessage, setSnackMessage] = useState<string | null>(null);
 
   // ---- Data Fetching ----
 
@@ -243,7 +255,7 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     fetchStatuses();
     fetchHealth();
-    const interval = setInterval(fetchStatuses, 5000);
+    const interval = setInterval(() => { fetchStatuses(); fetchHealth(); }, 5000);
     return () => clearInterval(interval);
   }, [fetchStatuses, fetchHealth]);
 
@@ -321,47 +333,45 @@ const Dashboard: React.FC = () => {
   };
 
   const resetCursor = async (source: string) => {
-    if (
-      !window.confirm(
-        `Are you sure you want to reset the cursor for ${source}? This will cause a full re-index on the next run.`,
-      )
-    ) {
-      return;
-    }
-    setError(null);
-    try {
-      const response = await fetch(`${API_BASE_URL}/index/${source}`, {
-        method: 'DELETE',
-      });
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      await fetchStatuses();
-    } catch (e: any) {
-      setError(`Failed to reset cursor for ${source}: ${e.message}`);
-    }
+    setConfirmDialog({
+      open: true,
+      title: 'Reset Cursor',
+      message: `Are you sure you want to reset the cursor for ${source}? This will cause a full re-index on the next run.`,
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, open: false }));
+        setError(null);
+        try {
+          const response = await fetch(`${API_BASE_URL}/index/${source}`, {
+            method: 'DELETE',
+          });
+          if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+          await fetchStatuses();
+        } catch (e: any) {
+          setError(`Failed to reset cursor for ${source}: ${e.message}`);
+        }
+      },
+    });
   };
 
   const deleteCollection = async (source: string) => {
-    if (
-      !window.confirm(
-        `WARNING: This will DELETE ALL indexed data for ${source} and reset its cursor. Are you absolutely sure?`,
-      )
-    ) {
-      return;
-    }
-    setError(null);
-    try {
-      const response = await fetch(`${API_BASE_URL}/index/${source}`, {
-        method: 'DELETE',
-      });
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      await fetchStatuses();
-    } catch (e: any) {
-      setError(`Failed to delete collection for ${source}: ${e.message}`);
-    }
+    setConfirmDialog({
+      open: true,
+      title: 'Delete Collection',
+      message: `WARNING: This will reset all indexing data for ${source} and clear its cursor. The next run will perform a full re-index. Are you sure?`,
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, open: false }));
+        setError(null);
+        try {
+          const response = await fetch(`${API_BASE_URL}/index/${source}`, {
+            method: 'DELETE',
+          });
+          if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+          await fetchStatuses();
+        } catch (e: any) {
+          setError(`Failed to delete collection for ${source}: ${e.message}`);
+        }
+      },
+    });
   };
 
   const exportConfig = async () => {
@@ -395,9 +405,7 @@ const Dashboard: React.FC = () => {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const result = await response.json();
       setError(null);
-      alert(
-        `Config imported! Sources: ${result.imported.join(', ')}${result.skipped.length ? `. Skipped: ${result.skipped.join(', ')}` : ''}`,
-      );
+      setSnackMessage(`Config imported! Sources: ${result.imported.join(', ')}${result.skipped.length ? `. Skipped: ${result.skipped.join(', ')}` : ''}`);
     } catch (e: any) {
       setError(`Failed to import config: ${e.message}`);
     }
@@ -859,6 +867,37 @@ const Dashboard: React.FC = () => {
           Export Config
         </Button>
       </Box>
+
+      {/* Confirmation Dialog */}
+      <Dialog
+        open={confirmDialog.open}
+        onClose={() => setConfirmDialog(prev => ({ ...prev, open: false }))}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>{confirmDialog.title}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            {confirmDialog.message}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDialog(prev => ({ ...prev, open: false }))}>
+            Cancel
+          </Button>
+          <Button variant="contained" color="error" onClick={confirmDialog.onConfirm}>
+            Confirm
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Import success snackbar */}
+      <Snackbar
+        open={Boolean(snackMessage)}
+        autoHideDuration={6000}
+        onClose={() => setSnackMessage(null)}
+        message={snackMessage}
+      />
     </Box>
   );
 };

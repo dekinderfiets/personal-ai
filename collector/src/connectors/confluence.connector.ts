@@ -31,7 +31,7 @@ export class ConfluenceConnector extends BaseConnector {
 
     constructor(private configService: ConfigService) {
         super();
-        this.baseUrl = this.configService.get<string>('confluence.baseUrl')!;
+        this.baseUrl = this.configService.get<string>('confluence.baseUrl')!.replace(/\/+$/, '');
         const username = this.configService.get<string>('confluence.username');
         const apiToken = this.configService.get<string>('confluence.apiToken');
 

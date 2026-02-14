@@ -267,6 +267,13 @@ const Documents: React.FC = () => {
     browseDocuments(1);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Re-fetch when source filters change in browse mode
+  useEffect(() => {
+    if (browseMode && hasSearched) {
+      browseDocuments(1);
+    }
+  }, [selectedSources]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleClear = () => {
     setQuery('');
     setSelectedSources(DEFAULT_SEARCH_SOURCES);
