@@ -1,0 +1,17 @@
+{
+  "name": "collector-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for collector search API",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "@types/node": "^22.19.8"
+  }
+}
