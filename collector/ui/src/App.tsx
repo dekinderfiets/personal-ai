@@ -9,6 +9,7 @@ import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import TimelineOutlinedIcon from '@mui/icons-material/TimelineOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
 import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
 import StorageOutlinedIcon from '@mui/icons-material/StorageOutlined';
@@ -16,6 +17,7 @@ import StorageOutlinedIcon from '@mui/icons-material/StorageOutlined';
 import Dashboard from './pages/Dashboard';
 import Settings from './pages/Settings';
 import Documents from './pages/Documents';
+import Projects from './pages/Projects';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { createAppTheme } from './theme';
 import { ColorModeContext } from './context/ColorModeContext';
@@ -25,6 +27,7 @@ const SIDEBAR_WIDTH = 220;
 const NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: <DashboardOutlinedIcon /> },
   { path: '/documents', label: 'Documents', icon: <DescriptionOutlinedIcon /> },
+  { path: '/projects', label: 'Projects', icon: <AccountTreeOutlinedIcon /> },
   { path: '/settings', label: 'Settings', icon: <SettingsOutlinedIcon /> },
 ];
 
@@ -175,6 +178,7 @@ function App() {
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/documents" element={<Documents />} />
+                  <Route path="/projects" element={<Projects />} />
                   <Route path="/activity" element={<Navigate to="/" replace />} />
                   <Route path="/search" element={<Navigate to="/documents" replace />} />
                 </Routes>
