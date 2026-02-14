@@ -23,12 +23,15 @@ describe('AnalyticsController', () => {
         mockSettingsService = {
             getSettings: jest.fn(),
             saveSettings: jest.fn(),
+            getEnabledSources: jest.fn().mockResolvedValue(['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar']),
+            getDisabledSources: jest.fn().mockResolvedValue([]),
+            setDisabledSources: jest.fn().mockResolvedValue(undefined),
         };
         controller = new AnalyticsController(mockAnalyticsService, mockHealthService, mockSettingsService);
     });
 
     describe('getSystemStats', () => {
-        it('should delegate with valid sources list', async () => {
+        it('should delegate with enabled sources', async () => {
             const stats = { totalDocuments: 100 };
             mockAnalyticsService.getSystemStats.mockResolvedValue(stats);
 
@@ -38,6 +41,15 @@ describe('AnalyticsController', () => {
             expect(mockAnalyticsService.getSystemStats).toHaveBeenCalledWith(
                 ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar'],
             );
+        });
+
+        it('should only pass enabled sources when some are disabled', async () => {
+            mockSettingsService.getEnabledSources.mockResolvedValue(['gmail', 'slack']);
+            mockAnalyticsService.getSystemStats.mockResolvedValue({ totalDocuments: 50 });
+
+            await controller.getSystemStats();
+
+            expect(mockAnalyticsService.getSystemStats).toHaveBeenCalledWith(['gmail', 'slack']);
         });
     });
 
@@ -125,13 +137,25 @@ describe('AnalyticsController', () => {
     });
 
     describe('health endpoints', () => {
-        it('getAllHealth should delegate to healthService', async () => {
+        it('getAllHealth should delegate with enabled sources', async () => {
             const health = [{ source: 'gmail', healthy: true }];
             mockHealthService.checkAllHealth.mockResolvedValue(health);
 
             const result = await controller.getAllHealth();
 
             expect(result).toEqual(health);
+            expect(mockHealthService.checkAllHealth).toHaveBeenCalledWith(
+                ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar'],
+            );
+        });
+
+        it('getAllHealth should only check enabled sources', async () => {
+            mockSettingsService.getEnabledSources.mockResolvedValue(['gmail']);
+            mockHealthService.checkAllHealth.mockResolvedValue([]);
+
+            await controller.getAllHealth();
+
+            expect(mockHealthService.checkAllHealth).toHaveBeenCalledWith(['gmail']);
         });
 
         it('getSourceHealth should throw 400 for invalid source', async () => {
@@ -171,6 +195,21 @@ describe('AnalyticsController', () => {
             expect(sentBody.settings).toBeDefined();
             expect(Object.keys(sentBody.settings)).toHaveLength(6);
         });
+
+        it('should include disabledSources in export', async () => {
+            mockSettingsService.getSettings.mockResolvedValue(null);
+            mockSettingsService.getDisabledSources.mockResolvedValue(['calendar', 'confluence']);
+
+            const mockRes = {
+                setHeader: jest.fn(),
+                send: jest.fn(),
+            };
+
+            await controller.exportConfig(mockRes as any);
+
+            const sentBody = JSON.parse(mockRes.send.mock.calls[0][0]);
+            expect(sentBody.disabledSources).toEqual(['calendar', 'confluence']);
+        });
     });
 
     describe('importConfig', () => {
@@ -206,6 +245,36 @@ describe('AnalyticsController', () => {
             expect(result.skipped).toContain('invalidSource');
             expect(result.skipped).toContain('slack');
             expect(mockSettingsService.saveSettings).toHaveBeenCalledTimes(1);
+        });
+
+        it('should restore disabledSources on import', async () => {
+            mockSettingsService.saveSettings.mockResolvedValue(undefined);
+
+            await controller.importConfig({
+                settings: { gmail: { domains: [], senders: [], labels: [] } },
+                disabledSources: ['calendar', 'confluence'],
+            });
+
+            expect(mockSettingsService.setDisabledSources).toHaveBeenCalledWith(['calendar', 'confluence']);
+        });
+
+        it('should filter invalid sources from disabledSources on import', async () => {
+            mockSettingsService.saveSettings.mockResolvedValue(undefined);
+
+            await controller.importConfig({
+                settings: {},
+                disabledSources: ['calendar', 'badSource'],
+            });
+
+            expect(mockSettingsService.setDisabledSources).toHaveBeenCalledWith(['calendar']);
+        });
+
+        it('should not call setDisabledSources when not provided in import', async () => {
+            await controller.importConfig({
+                settings: { gmail: { domains: [], senders: [], labels: [] } },
+            });
+
+            expect(mockSettingsService.setDisabledSources).not.toHaveBeenCalled();
         });
     });
 });

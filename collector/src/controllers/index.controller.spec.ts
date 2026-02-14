@@ -28,6 +28,9 @@ describe('IndexController', () => {
         mockSettingsService = {
             getSettings: jest.fn(),
             saveSettings: jest.fn(),
+            isSourceEnabled: jest.fn().mockResolvedValue(true),
+            getEnabledSources: jest.fn().mockResolvedValue(['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar']),
+            setSourceEnabled: jest.fn().mockResolvedValue(undefined),
         };
         controller = new IndexController(mockIndexingService, mockSettingsService);
     });
@@ -250,5 +253,66 @@ describe('IndexController', () => {
             expect(result).toEqual([{ id: 'INBOX' }]);
         });
 
+        it('should throw 403 for disabled source on discovery', async () => {
+            mockSettingsService.isSourceEnabled.mockResolvedValue(false);
+            await expect(controller.discoverJiraProjects()).rejects.toThrow(HttpException);
+            await expect(controller.discoverSlackChannels()).rejects.toThrow(HttpException);
+            await expect(controller.discoverDriveFolders()).rejects.toThrow(HttpException);
+            await expect(controller.discoverConfluenceSpaces()).rejects.toThrow(HttpException);
+            await expect(controller.discoverCalendars()).rejects.toThrow(HttpException);
+            await expect(controller.discoverGmailLabels()).rejects.toThrow(HttpException);
+        });
+    });
+
+    describe('disabled source enforcement', () => {
+        it('should reject indexing a disabled source with 403', async () => {
+            mockSettingsService.isSourceEnabled.mockResolvedValue(false);
+
+            await expect(controller.triggerIndexing('gmail', {})).rejects.toThrow(HttpException);
+            try {
+                await controller.triggerIndexing('gmail', {});
+            } catch (e: any) {
+                expect(e.getStatus()).toBe(403);
+            }
+            expect(mockIndexingService.startIndexing).not.toHaveBeenCalled();
+        });
+
+        it('should allow indexing an enabled source', async () => {
+            mockSettingsService.isSourceEnabled.mockResolvedValue(true);
+            mockIndexingService.startIndexing.mockResolvedValue({ started: true, message: 'ok' });
+
+            const result = await controller.triggerIndexing('gmail', {});
+
+            expect(result.status).toBe('started');
+            expect(mockIndexingService.startIndexing).toHaveBeenCalled();
+        });
+    });
+
+    describe('enabled-sources endpoints', () => {
+        it('getEnabledSources should return enabled sources list', async () => {
+            mockSettingsService.getEnabledSources.mockResolvedValue(['jira', 'gmail']);
+
+            const result = await controller.getEnabledSources();
+
+            expect(result).toEqual(['jira', 'gmail']);
+        });
+
+        it('setSourceEnabled should delegate to settingsService', async () => {
+            const result = await controller.setSourceEnabled('calendar', { enabled: false });
+
+            expect(mockSettingsService.setSourceEnabled).toHaveBeenCalledWith('calendar', false);
+            expect(result).toEqual({ message: 'Source calendar disabled' });
+        });
+
+        it('setSourceEnabled should throw 400 for invalid source', async () => {
+            await expect(controller.setSourceEnabled('bad', { enabled: true })).rejects.toThrow(HttpException);
+        });
+
+        it('setSourceEnabled should return correct message when enabling', async () => {
+            const result = await controller.setSourceEnabled('slack', { enabled: true });
+
+            expect(mockSettingsService.setSourceEnabled).toHaveBeenCalledWith('slack', true);
+            expect(result).toEqual({ message: 'Source slack enabled' });
+        });
     });
 });

@@ -127,4 +127,84 @@ describe('SettingsService', () => {
             await expect(service.deleteSettings('confluence')).resolves.toBeUndefined();
         });
     });
+
+    describe('disabled sources', () => {
+        it('returns empty array when no sources are disabled', async () => {
+            const result = await service.getDisabledSources();
+            expect(result).toEqual([]);
+        });
+
+        it('returns all sources as enabled when none are disabled', async () => {
+            const result = await service.getEnabledSources();
+            expect(result).toEqual(['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar']);
+        });
+
+        it('disabling a source adds it to the disabled list', async () => {
+            await service.setSourceEnabled('calendar', false);
+            const disabled = await service.getDisabledSources();
+            expect(disabled).toContain('calendar');
+        });
+
+        it('disabling a source removes it from enabled list', async () => {
+            await service.setSourceEnabled('calendar', false);
+            const enabled = await service.getEnabledSources();
+            expect(enabled).not.toContain('calendar');
+            expect(enabled).toHaveLength(5);
+        });
+
+        it('re-enabling a source removes it from disabled list', async () => {
+            await service.setSourceEnabled('calendar', false);
+            await service.setSourceEnabled('calendar', true);
+            const disabled = await service.getDisabledSources();
+            expect(disabled).not.toContain('calendar');
+        });
+
+        it('disabling an already-disabled source is idempotent', async () => {
+            await service.setSourceEnabled('slack', false);
+            await service.setSourceEnabled('slack', false);
+            const disabled = await service.getDisabledSources();
+            expect(disabled.filter(s => s === 'slack')).toHaveLength(1);
+        });
+
+        it('isSourceEnabled returns true for enabled source', async () => {
+            expect(await service.isSourceEnabled('jira')).toBe(true);
+        });
+
+        it('isSourceEnabled returns false for disabled source', async () => {
+            await service.setSourceEnabled('jira', false);
+            expect(await service.isSourceEnabled('jira')).toBe(false);
+        });
+
+        it('can disable multiple sources', async () => {
+            await service.setSourceEnabled('calendar', false);
+            await service.setSourceEnabled('confluence', false);
+            const disabled = await service.getDisabledSources();
+            expect(disabled).toContain('calendar');
+            expect(disabled).toContain('confluence');
+            const enabled = await service.getEnabledSources();
+            expect(enabled).toHaveLength(4);
+        });
+
+        it('setDisabledSources replaces the entire list', async () => {
+            await service.setSourceEnabled('jira', false);
+            await service.setDisabledSources(['gmail', 'drive'] as DataSource[]);
+            const disabled = await service.getDisabledSources();
+            expect(disabled).toEqual(['gmail', 'drive']);
+            expect(disabled).not.toContain('jira');
+        });
+
+        it('stores disabled sources in the correct Redis key', async () => {
+            await service.setSourceEnabled('slack', false);
+            expect(redisMock.set).toHaveBeenCalledWith(
+                'index:disabled-sources',
+                expect.any(String),
+            );
+        });
+
+        it('returns empty array for corrupted Redis data', async () => {
+            redisMock._store.set('index:disabled-sources', '{invalid}');
+            const result = await service.getDisabledSources();
+            expect(result).toEqual([]);
+        });
+    });
 });

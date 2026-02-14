@@ -1,15 +1,24 @@
 import { SearchController } from './search.controller';
 
+const ALL_SOURCES = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar'];
+
 describe('SearchController', () => {
     let controller: SearchController;
     let mockElasticsearchService: any;
+    let mockSettingsService: any;
 
     beforeEach(() => {
         mockElasticsearchService = {
             search: jest.fn(),
             navigate: jest.fn(),
+            countDocuments: jest.fn().mockResolvedValue(10),
+            listDocuments: jest.fn().mockResolvedValue({ results: [], total: 0 }),
+            getDocument: jest.fn().mockResolvedValue(null),
         };
-        controller = new SearchController(mockElasticsearchService, {} as any);
+        mockSettingsService = {
+            getEnabledSources: jest.fn().mockResolvedValue(ALL_SOURCES),
+        };
+        controller = new SearchController(mockElasticsearchService, {} as any, mockSettingsService);
     });
 
     describe('search', () => {
@@ -41,49 +50,66 @@ describe('SearchController', () => {
             });
         });
 
-        it('should pass undefined for optional params not provided', async () => {
-            const body = { query: 'simple' } as any;
+        it('should use enabled sources when no sources specified', async () => {
+            mockSettingsService.getEnabledSources.mockResolvedValue(['gmail', 'slack']);
             mockElasticsearchService.search.mockResolvedValue({ results: [], total: 0 });
 
-            await controller.search(body);
+            await controller.search({ query: 'test' });
 
-            expect(mockElasticsearchService.search).toHaveBeenCalledWith('simple', {
-                sources: undefined,
-                searchType: undefined,
-                limit: undefined,
-                offset: undefined,
-                where: undefined,
-                startDate: undefined,
-                endDate: undefined,
+            expect(mockElasticsearchService.search).toHaveBeenCalledWith('test', expect.objectContaining({
+                sources: ['gmail', 'slack'],
+            }));
+        });
+
+        it('should filter requested sources to only enabled ones', async () => {
+            mockSettingsService.getEnabledSources.mockResolvedValue(['gmail', 'slack']);
+            mockElasticsearchService.search.mockResolvedValue({ results: [], total: 0 });
+
+            await controller.search({
+                query: 'test',
+                sources: ['gmail', 'jira', 'calendar'] as any,
             });
+
+            expect(mockElasticsearchService.search).toHaveBeenCalledWith('test', expect.objectContaining({
+                sources: ['gmail'],
+            }));
         });
     });
 
-    describe('navigate', () => {
-        it('should delegate with default values', async () => {
-            const expected = { current: null, related: [], navigation: {} };
-            mockElasticsearchService.navigate.mockResolvedValue(expected);
+    describe('documentStats', () => {
+        it('should only count enabled sources', async () => {
+            mockSettingsService.getEnabledSources.mockResolvedValue(['gmail', 'slack']);
+            mockElasticsearchService.countDocuments.mockResolvedValue(50);
 
-            const result = await controller.navigate('doc-1', 'next', 'datapoint', undefined);
+            const result = await controller.documentStats();
 
-            expect(result).toEqual(expected);
-            expect(mockElasticsearchService.navigate).toHaveBeenCalledWith('doc-1', 'next', 'datapoint', 10);
+            expect(mockElasticsearchService.countDocuments).toHaveBeenCalledTimes(2);
+            expect(mockElasticsearchService.countDocuments).toHaveBeenCalledWith('gmail');
+            expect(mockElasticsearchService.countDocuments).toHaveBeenCalledWith('slack');
+            expect(result.sources).toHaveLength(2);
+            expect(result.total).toBe(100);
+        });
+    });
+
+    describe('listDocuments', () => {
+        it('should filter sources to enabled only when no sources specified', async () => {
+            mockSettingsService.getEnabledSources.mockResolvedValue(['gmail']);
+            mockElasticsearchService.listDocuments.mockResolvedValue({ results: [], total: 0 });
+
+            await controller.listDocuments();
+
+            expect(mockElasticsearchService.listDocuments).toHaveBeenCalledTimes(1);
+            expect(mockElasticsearchService.listDocuments).toHaveBeenCalledWith('gmail', expect.any(Object));
         });
 
-        it('should parse limit string to integer', async () => {
-            mockElasticsearchService.navigate.mockResolvedValue({ current: null, related: [], navigation: {} });
+        it('should filter requested sources to enabled only', async () => {
+            mockSettingsService.getEnabledSources.mockResolvedValue(['gmail', 'slack']);
+            mockElasticsearchService.listDocuments.mockResolvedValue({ results: [], total: 0 });
 
-            await controller.navigate('doc-1', 'prev', 'chunk', '5');
+            await controller.listDocuments('gmail,jira,calendar');
 
-            expect(mockElasticsearchService.navigate).toHaveBeenCalledWith('doc-1', 'prev', 'chunk', 5);
-        });
-
-        it('should pass direction and scope parameters correctly', async () => {
-            mockElasticsearchService.navigate.mockResolvedValue({ current: null, related: [], navigation: {} });
-
-            await controller.navigate('doc-1', 'siblings', 'context', '25');
-
-            expect(mockElasticsearchService.navigate).toHaveBeenCalledWith('doc-1', 'siblings', 'context', 25);
+            expect(mockElasticsearchService.listDocuments).toHaveBeenCalledTimes(1);
+            expect(mockElasticsearchService.listDocuments).toHaveBeenCalledWith('gmail', expect.any(Object));
         });
     });
 });

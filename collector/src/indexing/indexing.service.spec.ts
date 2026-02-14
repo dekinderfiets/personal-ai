@@ -48,6 +48,8 @@ function createMockElasticsearchService() {
 function createMockSettingsService() {
     return {
         getSourceSettings: jest.fn().mockResolvedValue(null),
+        getEnabledSources: jest.fn().mockResolvedValue(['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar'] as DataSource[]),
+        getDisabledSources: jest.fn().mockResolvedValue([] as DataSource[]),
     };
 }
 
@@ -1074,6 +1076,29 @@ describe('IndexingService', () => {
             expect(result.started).toEqual([]);
             expect(result.skipped).toEqual(['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar']);
         });
+
+        it('should only start enabled sources and skip disabled ones', async () => {
+            const { service, settingsService, temporalClient } = createService();
+            (settingsService as any).getEnabledSources.mockResolvedValue(['gmail', 'slack']);
+            temporalClient.startCollectAll.mockResolvedValue({ started: true });
+
+            const result = await service.indexAll();
+
+            expect(temporalClient.startCollectAll).toHaveBeenCalledWith({}, ['gmail', 'slack']);
+            expect(result.started).toEqual(['gmail', 'slack']);
+            expect(result.skipped).toEqual(['jira', 'drive', 'confluence', 'calendar']);
+        });
+
+        it('should return all skipped when all sources are disabled', async () => {
+            const { service, settingsService, temporalClient } = createService();
+            (settingsService as any).getEnabledSources.mockResolvedValue([]);
+
+            const result = await service.indexAll();
+
+            expect(temporalClient.startCollectAll).not.toHaveBeenCalled();
+            expect(result.started).toEqual([]);
+            expect(result.skipped).toEqual(['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar']);
+        });
     });
 
     // -----------------------------------------------------------------------
@@ -1235,6 +1260,36 @@ describe('IndexingService', () => {
             expect(slack.status).toBe('failed');
             expect(slack.lastError).toBe('Rate limit exceeded');
             expect(slack.lastErrorAt).toBe('2026-02-14T09:01:00.000Z');
+        });
+
+        it('should include disabled flag for each source', async () => {
+            const { service, settingsService, temporalClient, cursorService } = createService();
+            (settingsService as any).getDisabledSources.mockResolvedValue(['calendar', 'confluence']);
+
+            jest.spyOn(temporalClient, 'getSourceWorkflowInfo').mockResolvedValue(null);
+            jest.spyOn(cursorService, 'getJobStatus').mockResolvedValue(null);
+
+            const result = await service.getAllSourceInfo();
+
+            const calendar = result.find(s => s.source === 'calendar')!;
+            const gmail = result.find(s => s.source === 'gmail')!;
+            const confluence = result.find(s => s.source === 'confluence')!;
+
+            expect(calendar.disabled).toBe(true);
+            expect(confluence.disabled).toBe(true);
+            expect(gmail.disabled).toBe(false);
+        });
+
+        it('should set disabled to false for all sources when none are disabled', async () => {
+            const { service, settingsService, temporalClient, cursorService } = createService();
+            (settingsService as any).getDisabledSources.mockResolvedValue([]);
+
+            jest.spyOn(temporalClient, 'getSourceWorkflowInfo').mockResolvedValue(null);
+            jest.spyOn(cursorService, 'getJobStatus').mockResolvedValue(null);
+
+            const result = await service.getAllSourceInfo();
+
+            expect(result.every(s => s.disabled === false)).toBe(true);
         });
     });
 });
