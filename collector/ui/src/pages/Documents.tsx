@@ -85,7 +85,7 @@ const Documents: React.FC = () => {
 
   // Search controls
   const [query, setQuery] = useState('');
-  const [searchType, setSearchType] = useState<SearchType>('vector');
+  const [searchType, setSearchType] = useState<SearchType>('hybrid');
   const [selectedSources, setSelectedSources] = useState<DataSource[]>(DEFAULT_SEARCH_SOURCES);
   const [limit, setLimit] = useState(20);
   const [startDate, setStartDate] = useState('');
@@ -274,7 +274,7 @@ const Documents: React.FC = () => {
   const handleClear = () => {
     setQuery('');
     setSelectedSources(DEFAULT_SEARCH_SOURCES);
-    setSearchType('vector');
+    setSearchType('hybrid');
     setLimit(20);
     setStartDate('');
     setEndDate('');
