@@ -80,7 +80,7 @@ EXPOSE 8085
 ENV PORT=8085
 ENV PATH="/root/.local/bin:$PATH"
 
-CMD ["sh", "-c", "sed -i \"s/OPENAI_API_KEY_PLACEHOLDER/${OPENAI_API_KEY}/g\" /root/.cursor/mcp.json && node dist/main.js"]
+CMD ["node", "dist/main.js"]
 
 # Development stage
 FROM base AS development
