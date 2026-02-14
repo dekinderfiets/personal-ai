@@ -8,9 +8,7 @@ export default defineConfig({
   },
   server: {
     host: true, // Needed for Docker
-    allowedHosts: [
-      "*"
-    ],
+    allowedHosts: true,
     port: 5173,
     watch: {
       usePolling: true, // Critical for Docker on MacOS/Windows
