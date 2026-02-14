@@ -103,17 +103,10 @@ const Settings: React.FC = () => {
     setSnackbarOpen(true);
   };
 
-  /* --- check if a source has any meaningful config --- */
+  /* --- check if a source has any saved config (empty = index all) --- */
   const isSourceConfigured = (source: DataSource): boolean => {
     const s = getSettings(source);
-    if (!s) return false;
-    if (source === 'jira') return (s.projectKeys?.length ?? 0) > 0;
-    if (source === 'slack') return (s.channelIds?.length ?? 0) > 0;
-    if (source === 'gmail') return (s.labels?.length ?? 0) > 0;
-    if (source === 'drive') return (s.folderIds?.length ?? 0) > 0;
-    if (source === 'confluence') return (s.spaceKeys?.length ?? 0) > 0;
-    if (source === 'calendar') return (s.calendarIds?.length ?? 0) > 0;
-    return false;
+    return !!s && Object.keys(s).length > 0;
   };
 
   /* ================================================================== */
@@ -423,7 +416,7 @@ const Settings: React.FC = () => {
           <TextField
             {...params}
             placeholder="Search projects..."
-            helperText={loadingDiscovery ? 'Loading projects...' : 'Select which Jira projects to index'}
+            helperText={loadingDiscovery ? 'Loading projects...' : 'Select specific projects, or leave empty to index all'}
           />
         )}
       />
@@ -512,7 +505,7 @@ const Settings: React.FC = () => {
                 helperText={
                   loadingDiscovery
                     ? 'Loading channels...'
-                    : `${publicChannels.length} public, ${privateChannels.length} private, ${dms.length} DMs, ${groupDms.length} group DMs`
+                    : `${publicChannels.length} public, ${privateChannels.length} private, ${dms.length} DMs, ${groupDms.length} group DMs — leave empty to index all`
                 }
               />
             )}
@@ -563,7 +556,7 @@ const Settings: React.FC = () => {
     <Box>
       <Typography variant="subtitle2" sx={{ mb: 0.5 }}>Folders</Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-        Browse and select folders to index. Click a folder to select it, click the arrow to expand.
+        Browse and select specific folders to index, or leave empty to index all files. Click a folder to select it, click the arrow to expand.
       </Typography>
       {loadingDiscovery ? (
         <LinearProgress sx={{ my: 2 }} />
@@ -638,7 +631,7 @@ const Settings: React.FC = () => {
           <TextField
             {...params}
             placeholder="Search spaces..."
-            helperText={loadingDiscovery ? 'Loading spaces...' : 'Select which Confluence spaces to index'}
+            helperText={loadingDiscovery ? 'Loading spaces...' : 'Select specific spaces, or leave empty to index all'}
           />
         )}
       />
@@ -672,7 +665,7 @@ const Settings: React.FC = () => {
           <TextField
             {...params}
             placeholder="Search calendars..."
-            helperText={loadingDiscovery ? 'Loading calendars...' : 'Select which calendars to index'}
+            helperText={loadingDiscovery ? 'Loading calendars...' : 'Select specific calendars, or leave empty to index all'}
           />
         )}
       />
@@ -725,7 +718,7 @@ const Settings: React.FC = () => {
               <TextField
                 {...params}
                 placeholder="Inbox, Sent, etc."
-                helperText={loadingDiscovery ? 'Loading labels...' : 'Select labels to include'}
+                helperText={loadingDiscovery ? 'Loading labels...' : 'Select specific labels, or leave empty to index all'}
               />
             )}
           />
@@ -750,7 +743,7 @@ const Settings: React.FC = () => {
             <TextField
               {...params}
               placeholder="e.g. google.com"
-              helperText="Type a domain and press Enter to add (optional)"
+              helperText="Type a domain and press Enter to add — leave empty to include all domains"
             />
           )}
         />
@@ -774,7 +767,7 @@ const Settings: React.FC = () => {
             <TextField
               {...params}
               placeholder="e.g. boss@company.com"
-              helperText="Type an email and press Enter to add (optional)"
+              helperText="Type an email and press Enter to add — leave empty to include all senders"
             />
           )}
         />

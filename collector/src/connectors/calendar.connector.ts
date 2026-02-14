@@ -38,9 +38,16 @@ export class CalendarConnector extends BaseConnector {
         try {
             const token = await this.googleAuthService.getAccessToken(['https://www.googleapis.com/auth/calendar.readonly']);
 
-            const calendarIdsToFetch = request.calendarIds && request.calendarIds.length > 0
-                ? request.calendarIds
-                : ['primary'];
+            let calendarIdsToFetch: string[];
+            if (request.calendarIds && request.calendarIds.length > 0) {
+                calendarIdsToFetch = request.calendarIds;
+            } else {
+                // No specific calendars selected — index all accessible calendars
+                const allCalendars = await this.listCalendars();
+                calendarIdsToFetch = allCalendars.length > 0
+                    ? allCalendars.map((c: any) => c.id)
+                    : ['primary'];
+            }
 
             // Pagination state from cursor metadata
             const calendarIndex = (cursor?.metadata?.calendarIndex as number | undefined) ?? 0;
