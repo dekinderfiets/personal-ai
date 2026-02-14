@@ -823,7 +823,7 @@ describe('ElasticsearchService', () => {
             expect(body.query.function_score.query.bool.must[0]).toHaveProperty('multi_match');
         });
 
-        it('should call ES with sub_searches + rrf for hybrid search', async () => {
+        it('should call ES with top-level query + knn for hybrid search', async () => {
             mockEsClient.search.mockResolvedValue({
                 hits: { hits: [], total: { value: 0 } },
             });
@@ -835,12 +835,13 @@ describe('ElasticsearchService', () => {
 
             const searchCall = mockEsClient.search.mock.calls[0][0];
             const body = searchCall.body;
-            expect(body).toHaveProperty('sub_searches');
-            expect(body.sub_searches).toEqual(expect.any(Array));
-            expect(body.sub_searches[1]).toHaveProperty('knn');
-            expect(body.sub_searches[1]).not.toHaveProperty('query');
-            expect(body).toHaveProperty('rank');
-            expect(body.rank).toHaveProperty('rrf');
+            expect(body).toHaveProperty('query');
+            expect(body.query).toHaveProperty('function_score');
+            expect(body).toHaveProperty('knn');
+            expect(body.knn).toHaveProperty('field', 'embedding');
+            expect(body.knn).toHaveProperty('query_vector');
+            expect(body.knn).toHaveProperty('k', 200);
+            expect(body.knn).toHaveProperty('num_candidates', 400);
         });
 
         it('should deduplicate chunks keeping highest-scoring per parent', async () => {

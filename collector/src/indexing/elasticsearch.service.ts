@@ -614,59 +614,47 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
             };
         }
 
-        // hybrid: sub_searches with RRF
+        // hybrid: top-level query + knn combined by ES
         return {
             size: limit,
             _source: { excludes: ['embedding'] },
-            sub_searches: [
-                {
+            query: {
+                function_score: {
                     query: {
-                        function_score: {
-                            query: {
-                                bool: {
-                                    must: [
-                                        {
-                                            multi_match: {
-                                                query,
-                                                fields: ['content', 'title^3'],
-                                            },
-                                        },
-                                    ],
-                                    ...(filters.length > 0 ? { filter: filters } : {}),
-                                },
-                            },
-                            functions: [
+                        bool: {
+                            must: [
                                 {
-                                    exp: {
-                                        updatedAtTs: {
-                                            origin: Date.now(),
-                                            scale: 2592000000,
-                                            offset: 604800000,
-                                            decay: 0.5,
-                                        },
+                                    multi_match: {
+                                        query,
+                                        fields: ['content', 'title^3'],
                                     },
-                                    weight: 0.3,
                                 },
                             ],
-                            boost_mode: 'multiply',
+                            ...(filters.length > 0 ? { filter: filters } : {}),
                         },
                     },
+                    functions: [
+                        {
+                            exp: {
+                                updatedAtTs: {
+                                    origin: Date.now(),
+                                    scale: 2592000000,
+                                    offset: 604800000,
+                                    decay: 0.5,
+                                },
+                            },
+                            weight: 0.3,
+                        },
+                    ],
+                    boost_mode: 'multiply',
                 },
-                {
-                    knn: {
-                        field: 'embedding',
-                        query_vector: queryEmbedding,
-                        k: 200,
-                        num_candidates: 400,
-                        ...(filterClause ? { filter: filterClause } : {}),
-                    },
-                },
-            ],
-            rank: {
-                rrf: {
-                    window_size: 200,
-                    rank_constant: 60,
-                },
+            },
+            knn: {
+                field: 'embedding',
+                query_vector: queryEmbedding,
+                k: 200,
+                num_candidates: 400,
+                ...(filterClause ? { filter: filterClause } : {}),
             },
         };
     }
