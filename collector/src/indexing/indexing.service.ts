@@ -241,6 +241,7 @@ export class IndexingService {
     }
 
     async updateStatus(source: DataSource, updates: Partial<IndexStatus>): Promise<void> {
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- updateStatus still uses Redis internally during activity execution
         const current = await this.getStatus(source);
         const newStatus: IndexStatus = { ...current, ...updates, source };
         await this.cursorService.saveJobStatus(newStatus);
@@ -328,6 +329,7 @@ export class IndexingService {
     // Status & discovery (unchanged)
     // -------------------------------------------------------------------------
 
+    /** @deprecated Use getAllSourceInfo() instead — it reads status from Temporal directly. */
     async getStatus(source: DataSource): Promise<IndexStatus> {
         const status = await this.cursorService.getJobStatus(source);
         if (!status) return { source, status: 'idle', lastSync: null, documentsIndexed: 0 };
@@ -344,6 +346,7 @@ export class IndexingService {
         return status;
     }
 
+    /** @deprecated Use getAllSourceInfo() instead — it reads status from Temporal directly. */
     async getAllStatus(): Promise<IndexStatus[]> {
         const statuses = await this.cursorService.getAllJobStatus(this.allSources);
 
