@@ -2,7 +2,7 @@
 FROM node:20-slim AS development
 
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip && \
-    pip3 install --break-system-packages markitdown && \
+    pip3 install --break-system-packages 'markitdown[all]' && \
     rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 
@@ -42,7 +42,7 @@ RUN npm run build
 FROM node:20-slim AS production
 
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip && \
-    pip3 install --break-system-packages markitdown && \
+    pip3 install --break-system-packages 'markitdown[all]' && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
