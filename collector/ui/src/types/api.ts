@@ -2,6 +2,8 @@ export type DataSource = 'jira' | 'slack' | 'gmail' | 'drive' | 'confluence' | '
 
 export const ALL_SOURCES: DataSource[] = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar', 'github'];
 
+export const DEFAULT_SEARCH_SOURCES: DataSource[] = ALL_SOURCES.filter(s => s !== 'calendar');
+
 export const SOURCE_COLORS: Record<DataSource, string> = {
   jira: '#0052CC',
   slack: '#4A154B',

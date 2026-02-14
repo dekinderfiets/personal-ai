@@ -22,7 +22,7 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { useNavigate } from 'react-router-dom';
 import {
-  DataSource, SearchResult, ALL_SOURCES, SOURCE_COLORS, SOURCE_LABELS, DocumentStats,
+  DataSource, SearchResult, ALL_SOURCES, DEFAULT_SEARCH_SOURCES, SOURCE_COLORS, SOURCE_LABELS, DocumentStats,
 } from '../types/api';
 
 const API_BASE_URL = '/api/v1';
@@ -89,7 +89,7 @@ const Documents: React.FC = () => {
   // Search controls
   const [query, setQuery] = useState('');
   const [searchType, setSearchType] = useState<SearchType>('vector');
-  const [selectedSources, setSelectedSources] = useState<DataSource[]>([]);
+  const [selectedSources, setSelectedSources] = useState<DataSource[]>(DEFAULT_SEARCH_SOURCES);
   const [limit, setLimit] = useState(20);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -269,7 +269,7 @@ const Documents: React.FC = () => {
 
   const handleClear = () => {
     setQuery('');
-    setSelectedSources([]);
+    setSelectedSources(DEFAULT_SEARCH_SOURCES);
     setSearchType('vector');
     setLimit(20);
     setStartDate('');
@@ -391,7 +391,9 @@ const Documents: React.FC = () => {
 
   const totalPages = Math.ceil(total / limit);
 
-  const hasActiveFilters = selectedSources.length > 0 || startDate || endDate || metaAuthor || metaType;
+  const sourcesChanged = selectedSources.length !== DEFAULT_SEARCH_SOURCES.length
+    || selectedSources.some(s => !DEFAULT_SEARCH_SOURCES.includes(s));
+  const hasActiveFilters = sourcesChanged || startDate || endDate || metaAuthor || metaType;
 
   return (
     <Box>
