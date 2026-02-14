@@ -4,7 +4,7 @@ Extract concrete accomplishments from the week's activity for standups, reviews,
 
 ## Purpose
 
-Mines all indexed data to identify and articulate specific accomplishments. Transforms raw activity (task status changes, merged PRs, resolved threads) into clear accomplishment statements suitable for standups, manager updates, and performance reviews.
+Mines all indexed data to identify and articulate specific accomplishments. Transforms raw activity (task status changes, resolved threads) into clear accomplishment statements suitable for standups, manager updates, and performance reviews.
 
 ## Inputs
 
@@ -47,47 +47,7 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
 - Prioritize issues assigned to the user
 - For each: extract key, title, project, url
 
-### Step 3: Find Merged Code
-
-**Merged PRs:**
-```bash
-curl -X POST "${COLLECTOR_API_URL}/search" \
-  -H "x-api-key: ${COLLECTOR_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "pull request merged closed completed",
-    "sources": ["github"],
-    "searchType": "hybrid",
-    "startDate": "<week_start>",
-    "endDate": "<week_end>",
-    "limit": 20
-  }'
-```
-
-**Processing:**
-- Filter to PRs authored by the user (`metadata.is_author` = true)
-- Filter to merged PRs (`metadata.state` = "closed" and type = "pull_request")
-- For each: extract title, repo, url
-
-### Step 4: Find Reviews Completed
-
-**PR reviews given:**
-```bash
-curl -X POST "${COLLECTOR_API_URL}/search" \
-  -H "x-api-key: ${COLLECTOR_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "review comment approved changes requested",
-    "sources": ["github"],
-    "searchType": "hybrid",
-    "where": { "type": "pr_review" },
-    "startDate": "<week_start>",
-    "endDate": "<week_end>",
-    "limit": 15
-  }'
-```
-
-### Step 5: Find Documents Created/Updated
+### Step 3: Find Documents Created/Updated
 
 ```bash
 curl -X POST "${COLLECTOR_API_URL}/search" \
@@ -107,7 +67,7 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
 - Filter to documents owned or authored by the user
 - Distinguish between created (new) and updated (existing)
 
-### Step 6: Find Key Decisions and Discussions
+### Step 4: Find Key Decisions and Discussions
 
 Search for significant conversations where decisions were made.
 
@@ -125,7 +85,7 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
   }'
 ```
 
-### Step 7: Generate Accomplishments
+### Step 5: Generate Accomplishments
 
 Transform raw data into accomplishment statements. Each accomplishment should:
 1. Start with an action verb (Completed, Shipped, Resolved, Reviewed, Authored, Led, ...)
@@ -143,12 +103,7 @@ Transform raw data into accomplishment statements. Each accomplishment should:
 - **Completed [PROJ-42]: Fix login bug** — Resolved critical authentication issue affecting 200+ users. High priority. [→ link]
 - **Completed [PROJ-38]: Update API docs** — Documented 12 new endpoints for the v2 API. [→ link]
 
-### Code Shipped
-- **Merged PR #234: Add auth middleware** — Implemented JWT-based authentication for the API gateway. [→ link]
-- **Merged PR #228: Database migration** — Migrated user table to support multi-tenancy. [→ link]
-
-### Reviews & Collaboration
-- **Reviewed 4 PRs** across myapp and mylib repositories
+### Documents & Collaboration
 - **Authored design doc**: "Authentication Architecture v2" on Confluence [→ link]
 
 ### Key Discussions & Decisions
@@ -160,14 +115,11 @@ Transform raw data into accomplishment statements. Each accomplishment should:
 ```markdown
 ## This Week
 - Completed PROJ-42 (login bug fix) and PROJ-38 (API docs)
-- Merged 2 PRs: auth middleware and DB migration
-- Reviewed 4 PRs
 - Wrote auth architecture design doc
 - Led API design discussion — decided on REST+GraphQL
 
 ## Next Week
 - Start PROJ-55: API migration
-- Review and merge pending PRs
 - Sprint planning for Q1 features
 ```
 
@@ -177,13 +129,10 @@ Transform raw data into accomplishment statements. Each accomplishment should:
 
 **Engineering Delivery:**
 - Resolved critical authentication bug (PROJ-42), unblocking 200+ affected users
-- Shipped JWT auth middleware for API gateway (PR #234), enabling secure third-party integrations
-- Completed database migration to multi-tenant architecture (PR #228)
 
 **Technical Leadership:**
 - Authored "Authentication Architecture v2" design document establishing team standards
 - Led cross-team API design discussion, driving consensus on REST+GraphQL hybrid approach
-- Provided thorough code reviews on 4 PRs, mentoring junior engineers on security practices
 
 **Collaboration:**
 - Coordinated with product team on Q1 priority alignment

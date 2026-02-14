@@ -23,7 +23,6 @@ describe('IndexController', () => {
             getConfluenceSpaces: jest.fn(),
             getCalendars: jest.fn(),
             getGmailLabels: jest.fn(),
-            getGitHubRepositories: jest.fn(),
         };
         mockSettingsService = {
             getSettings: jest.fn(),
@@ -70,7 +69,7 @@ describe('IndexController', () => {
 
         it('should accept all valid sources', async () => {
             mockIndexingService.startIndexing.mockResolvedValue({ started: true, message: 'ok' });
-            const sources = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar', 'github'];
+            const sources = ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar'];
 
             for (const source of sources) {
                 await controller.triggerIndexing(source, {});
@@ -165,10 +164,10 @@ describe('IndexController', () => {
         it('should delete document and return message', async () => {
             mockIndexingService.deleteDocument.mockResolvedValue(undefined);
 
-            const result = await controller.deleteDocument('github', 'doc-123');
+            const result = await controller.deleteDocument('jira', 'doc-123');
 
-            expect(result).toEqual({ message: 'Document doc-123 deleted from github' });
-            expect(mockIndexingService.deleteDocument).toHaveBeenCalledWith('github', 'doc-123');
+            expect(result).toEqual({ message: 'Document doc-123 deleted from jira' });
+            expect(mockIndexingService.deleteDocument).toHaveBeenCalledWith('jira', 'doc-123');
         });
     });
 
@@ -238,10 +237,5 @@ describe('IndexController', () => {
             expect(result).toEqual([{ id: 'INBOX' }]);
         });
 
-        it('discoverGitHubRepos delegates correctly', async () => {
-            mockIndexingService.getGitHubRepositories.mockResolvedValue([{ name: 'repo' }]);
-            const result = await controller.discoverGitHubRepos();
-            expect(result).toEqual([{ name: 'repo' }]);
-        });
     });
 });

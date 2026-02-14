@@ -124,7 +124,7 @@ describe('SettingsService', () => {
         });
 
         it('does not error when deleting nonexistent key', async () => {
-            await expect(service.deleteSettings('github')).resolves.toBeUndefined();
+            await expect(service.deleteSettings('confluence')).resolves.toBeUndefined();
         });
     });
 });

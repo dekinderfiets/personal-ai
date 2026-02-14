@@ -8,7 +8,6 @@ import { IndexingService } from './indexing.service';
 function createMockConfigService(overrides: Record<string, any> = {}) {
     const config: Record<string, any> = {
         'jira.username': 'john.doe@company.com',
-        'github.username': 'johndoe',
         'google.userEmail': 'john.doe@company.com',
         'app.companyDomains': 'company.com,subsidiary.io',
         ...overrides,
@@ -97,7 +96,6 @@ function createService(configOverrides: Record<string, any> = {}) {
         drive: createMockConnector(),
         confluence: createMockConnector(),
         calendar: createMockConnector(),
-        github: createMockConnector(),
     };
 
     const service = new IndexingService(
@@ -114,7 +112,6 @@ function createService(configOverrides: Record<string, any> = {}) {
         connectors.drive as any,
         connectors.confluence as any,
         connectors.calendar as any,
-        connectors.github as any,
     );
 
     return { service, configService, cursorService, fileSaverService, elasticsearchService, settingsService, analyticsService, temporalClient, connectors };
@@ -138,7 +135,6 @@ describe('IndexingService', () => {
             expect(service.getConnector('drive')).toBe(connectors.drive);
             expect(service.getConnector('confluence')).toBe(connectors.confluence);
             expect(service.getConnector('calendar')).toBe(connectors.calendar);
-            expect(service.getConnector('github')).toBe(connectors.github);
         });
 
         it('throws for unknown source', () => {
@@ -247,16 +243,8 @@ describe('IndexingService', () => {
             expect((result.metadata as any).is_assigned_to_me).toBe(false);
         });
 
-        it('matches github username', () => {
+        it('matches google email for drive ownership', () => {
             const { service } = createService();
-            const doc = makeDoc('github', 'GH-1', 'text', {
-                updatedAt: new Date().toISOString(), is_author: false,
-                is_assigned_to_me: false,
-            });
-            // GitHub relevance reads is_author/is_assigned_to_me from metadata directly.
-            // The isCurrentUser method is used for drive/calendar/jira.
-            // For direct testing, we use drive/jira. GitHub doesn't call isCurrentUser in addRelevanceWeights.
-            // Let's test via drive with google email match.
             const driveDoc = makeDoc('drive', 'D-1', 'text', {
                 owner: 'John.Doe@Company.Com', modifiedAt: new Date().toISOString(),
             });
@@ -672,46 +660,6 @@ describe('IndexingService', () => {
     });
 
     // -----------------------------------------------------------------------
-    // computeGitHubRelevance
-    // -----------------------------------------------------------------------
-    describe('computeGitHubRelevance (via addRelevanceWeights)', () => {
-        it('author with assignment and recent update', () => {
-            const { service } = createService();
-            const doc = makeDoc('github', 'GH-1', 'text', {
-                is_author: true, is_assigned_to_me: true,
-                updatedAt: new Date().toISOString(),
-            });
-            const [result] = service.addRelevanceWeights('github', [doc]);
-            const m = result.metadata as any;
-            // base=0.4, is_author +0.2, is_assigned_to_me +0.2, days<7 +0.15
-            // = 0.4 + 0.2 + 0.2 + 0.15 = 0.95
-            expect(m.relevance_score).toBeCloseTo(0.95, 10);
-        });
-
-        it('not author, not assigned, old update', () => {
-            const { service } = createService();
-            const oldDate = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
-            const doc = makeDoc('github', 'GH-2', 'text', {
-                is_author: false, is_assigned_to_me: false, updatedAt: oldDate,
-            });
-            const [result] = service.addRelevanceWeights('github', [doc]);
-            // base=0.4, no bonuses = 0.4
-            expect((result.metadata as any).relevance_score).toBe(0.4);
-        });
-
-        it('mid-range update gets 0.05 bonus', () => {
-            const { service } = createService();
-            const fifteenDays = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString();
-            const doc = makeDoc('github', 'GH-3', 'text', {
-                is_author: false, is_assigned_to_me: false, updatedAt: fifteenDays,
-            });
-            const [result] = service.addRelevanceWeights('github', [doc]);
-            // base=0.4, 7<=days<30 +0.05 = 0.45
-            expect((result.metadata as any).relevance_score).toBe(0.45);
-        });
-    });
-
-    // -----------------------------------------------------------------------
     // applySettingsToRequest
     // -----------------------------------------------------------------------
     describe('applySettingsToRequest', () => {
@@ -783,28 +731,6 @@ describe('IndexingService', () => {
             expect(request.calendarIds).toEqual(['cal1']);
         });
 
-        it('applies github settings including indexFiles', () => {
-            const { service } = createService();
-            const request: IndexRequest = {};
-            service.applySettingsToRequest('github', { repos: ['owner/repo'], indexFiles: true } as any, request);
-            expect(request.repos).toEqual(['owner/repo']);
-            expect(request.indexFiles).toBe(true);
-        });
-
-        it('does not override existing github indexFiles when already set to false', () => {
-            const { service } = createService();
-            const request: IndexRequest = { indexFiles: false };
-            service.applySettingsToRequest('github', { repos: ['r'], indexFiles: true } as any, request);
-            // ?? operator: false is not null/undefined so it keeps false
-            expect(request.indexFiles).toBe(false);
-        });
-
-        it('fills github indexFiles from settings when undefined', () => {
-            const { service } = createService();
-            const request: IndexRequest = {};
-            service.applySettingsToRequest('github', { repos: ['r'], indexFiles: true } as any, request);
-            expect(request.indexFiles).toBe(true);
-        });
     });
 
     // -----------------------------------------------------------------------
@@ -839,11 +765,6 @@ describe('IndexingService', () => {
         it('sorts calendar calendarIds', () => {
             const { service } = createService();
             expect(service.extractConfigKey('calendar', { calendarIds: ['c2', 'c1'] })).toBe('c1,c2');
-        });
-
-        it('sorts github repos', () => {
-            const { service } = createService();
-            expect(service.extractConfigKey('github', { repos: ['z/repo', 'a/repo'] })).toBe('a/repo,z/repo;files=true');
         });
 
         it('serializes gmail settings as sorted JSON', () => {
@@ -1141,7 +1062,7 @@ describe('IndexingService', () => {
             const { service, temporalClient } = createService();
             temporalClient.startCollectAll.mockResolvedValue({ started: true });
             const result = await service.indexAll();
-            expect(result.started).toEqual(['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar', 'github']);
+            expect(result.started).toEqual(['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar']);
             expect(result.skipped).toEqual([]);
         });
 
@@ -1150,7 +1071,7 @@ describe('IndexingService', () => {
             temporalClient.startCollectAll.mockResolvedValue({ started: false });
             const result = await service.indexAll();
             expect(result.started).toEqual([]);
-            expect(result.skipped).toEqual(['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar', 'github']);
+            expect(result.skipped).toEqual(['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar']);
         });
     });
 
@@ -1168,10 +1089,10 @@ describe('IndexingService', () => {
     });
 
     describe('resetAll', () => {
-        it('resets all 7 sources', async () => {
+        it('resets all 6 sources', async () => {
             const { service, cursorService } = createService();
             await service.resetAll();
-            expect(cursorService.resetCursor).toHaveBeenCalledTimes(7);
+            expect(cursorService.resetCursor).toHaveBeenCalledTimes(6);
         });
     });
 

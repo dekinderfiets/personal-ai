@@ -106,21 +106,6 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
   }'
 ```
 
-**GitHub activity:**
-```bash
-curl -X POST "${COLLECTOR_API_URL}/search" \
-  -H "x-api-key: ${COLLECTOR_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "pull request issue commit review",
-    "sources": ["github"],
-    "searchType": "hybrid",
-    "startDate": "<start_date>",
-    "endDate": "<end_date>",
-    "limit": 20
-  }'
-```
-
 ### Step 3: Aggregate and Summarize
 
 For each source, compute:
@@ -141,7 +126,6 @@ For each source, compute:
 | Slack | 15 messages | Active in #engineering, #design |
 | Gmail | 7 emails | 3 require response |
 | Drive | 2 docs | Architecture doc updated |
-| GitHub | 4 items | 1 PR merged, 2 reviews pending |
 
 ## 📅 Calendar
 [List of events with times]
@@ -157,7 +141,4 @@ For each source, compute:
 
 ## 📄 Documents
 [Modified documents with links]
-
-## 🐙 GitHub
-[PRs, issues, reviews with links]
 ```

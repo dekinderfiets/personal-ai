@@ -40,20 +40,6 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
   }'
 ```
 
-**All open GitHub items:**
-```bash
-curl -X POST "${COLLECTOR_API_URL}/search" \
-  -H "x-api-key: ${COLLECTOR_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "open assigned pull request issue review",
-    "sources": ["github"],
-    "searchType": "hybrid",
-    "where": { "state": "open" },
-    "limit": 20
-  }'
-```
-
 **Recent actionable emails:**
 ```bash
 curl -X POST "${COLLECTOR_API_URL}/search" \
@@ -116,14 +102,12 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
 |---|------|--------|----------|-----|--------|
 | 1 | [PROJ-42] Fix login bug | Jira | 🔴 Critical | 5d | Deep |
 | 2 | Reply to CEO email | Gmail | 🔴 High | 24h | Quick |
-| 3 | PR #234 review | GitHub | 🟡 Medium | 28h | Quick |
-| 4 | Answer @bob in #eng | Slack | 🟡 Medium | 12h | Quick |
-| 5 | [PROJ-55] API migration | Jira | 🟡 Medium | 3d | Deep |
+| 3 | Answer @bob in #eng | Slack | 🟡 Medium | 12h | Quick |
+| 4 | [PROJ-55] API migration | Jira | 🟡 Medium | 3d | Deep |
 | ... | ... | ... | ... | ... | ... |
 
 ### Quick Wins (can do in <15 min)
 - Reply to @bob in #engineering [→ link]
-- Approve PR #234 [→ link]
 - Reply to CEO email [→ link]
 
 ### Deep Work Items

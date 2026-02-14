@@ -59,21 +59,6 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
   }'
 ```
 
-**GitHub — Code activity:**
-```bash
-curl -X POST "${COLLECTOR_API_URL}/search" \
-  -H "x-api-key: ${COLLECTOR_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "pull request merged created review commit issue",
-    "sources": ["github"],
-    "searchType": "hybrid",
-    "startDate": "<week_start>",
-    "endDate": "<week_end>",
-    "limit": 30
-  }'
-```
-
 **Slack — Conversations:**
 ```bash
 curl -X POST "${COLLECTOR_API_URL}/search" \
@@ -128,9 +113,6 @@ Calculate summary metrics:
 | Meetings attended | Count of calendar events |
 | Tasks worked on | Count of unique Jira issues updated |
 | Tasks completed | Count of Jira issues moved to Done/Resolved |
-| PRs opened | Count of PRs created |
-| PRs merged | Count of PRs merged |
-| Code reviews | Count of review comments |
 | Emails processed | Count of email threads |
 | Documents modified | Count of Drive/Confluence docs |
 | Slack conversations | Count of unique channels/threads |
@@ -157,9 +139,6 @@ Analyze the week's activity for common themes:
 | Meetings | 12 |
 | Tasks Completed | 5 |
 | Tasks In Progress | 3 |
-| PRs Merged | 2 |
-| PRs Opened | 1 |
-| Code Reviews | 4 |
 | Emails | 23 |
 | Documents Modified | 3 |
 
@@ -169,21 +148,18 @@ Analyze the week's activity for common themes:
 - 09:00 Daily Standup
 - Worked on [PROJ-42] Fix login bug (In Progress → Done)
 - 14:00 Sprint Planning
-- Reviewed PR #230: Database migration
 
 ### Tuesday, Feb 4
 - 09:00 Daily Standup
-- Created PR #234: Add auth middleware
 - Active in #engineering (API design discussion)
 - Responded to 5 emails
 
 [... continue for each day ...]
 
 ## 🎯 Focus Areas
-1. **Authentication System** (40% of effort) — Completed login fix, opened auth middleware PR
+1. **Authentication System** (50% of effort) — Completed login fix, security improvements
 2. **API Design** (30%) — Sprint planning, Slack discussions, design doc updates
-3. **Code Reviews** (20%) — Reviewed 4 PRs across 2 repos
-4. **Communication** (10%) — Email responses, Slack threads
+3. **Communication** (20%) — Email responses, Slack threads
 
 ## 📈 Trends
 - Busiest day: Wednesday (5 meetings, 8 task updates)

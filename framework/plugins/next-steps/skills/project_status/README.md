@@ -4,7 +4,7 @@ Search across all connectors for data related to a specific project or topic and
 
 ## Purpose
 
-Builds a 360-degree view of a project by searching every connector for related items. Combines Jira tickets, Slack conversations, emails, documents, calendar events, and GitHub activity into a single coherent status report.
+Builds a 360-degree view of a project by searching every connector for related items. Combines Jira tickets, Slack conversations, emails, documents, and calendar events into a single coherent status report.
 
 ## Inputs
 
@@ -51,8 +51,7 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
 ### Step 2: Categorize Results
 
 Group results by source and type:
-- **Tasks**: Jira issues, GitHub issues (open vs closed, by status)
-- **Code**: GitHub PRs (open, merged, closed)
+- **Tasks**: Jira issues (open vs closed, by status)
 - **Conversations**: Slack threads mentioning the project
 - **Emails**: Email threads about the project
 - **Documents**: Drive docs and Confluence pages
@@ -67,11 +66,6 @@ For each category, extract key metrics:
 - Issues by status (To Do, In Progress, Done, Blocked)
 - Recent completions (last 7 days)
 - Blockers or high-priority items
-
-**Code:**
-- Open PRs and their status
-- Recently merged PRs
-- Any stale PRs (open >7 days)
 
 **Communication:**
 - Active Slack channels/threads
@@ -99,7 +93,6 @@ For each category, extract key metrics:
 | Metric | Status |
 |--------|--------|
 | Open Issues | X (Y critical) |
-| PRs | X open, Y merged this week |
 | Last Activity | [timestamp] |
 | Upcoming Deadline | [date or "None"] |
 | Blockers | X items |
@@ -113,13 +106,6 @@ For each category, extract key metrics:
 
 ### Blockers
 [Any blocked or critical items]
-
-## 🐙 Code Activity
-### Open PRs
-[List with authors and status]
-
-### Recently Merged
-[List from last 7 days]
 
 ## 💬 Recent Discussions
 [Key Slack threads and email conversations]

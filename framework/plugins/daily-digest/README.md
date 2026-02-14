@@ -4,7 +4,7 @@ Generate comprehensive daily briefings by aggregating data from all indexed pers
 
 ## Purpose
 
-Acts as a personal briefing assistant that queries the collector service across all connectors (Gmail, Calendar, Jira, Slack, Drive, Confluence, GitHub) to produce a structured daily digest. Surfaces what's important, what needs attention, and what's coming up.
+Acts as a personal briefing assistant that queries the collector service across all connectors (Gmail, Calendar, Jira, Slack, Drive, Confluence) to produce a structured daily digest. Surfaces what's important, what needs attention, and what's coming up.
 
 ## Capabilities
 
@@ -71,7 +71,7 @@ Execute `skills/morning_briefing` and `skills/important_highlights` in parallel 
 [Calendar events sorted by time]
 
 ## 📋 Active Tasks
-[Open Jira issues, GitHub issues/PRs assigned to me]
+[Open Jira issues assigned to me]
 
 ## 💬 Messages Needing Response
 [Unresponded Slack messages and emails]

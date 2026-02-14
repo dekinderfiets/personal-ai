@@ -208,7 +208,7 @@ describe('ElasticsearchService', () => {
 
         it.each([
             ['slack', 7], ['calendar', 14], ['gmail', 14],
-            ['jira', 30], ['github', 60], ['confluence', 90], ['drive', 90],
+            ['jira', 30], ['confluence', 90], ['drive', 90],
         ] as [DataSource, number][])('should return %i days for %s', (source, expected) => {
             expect(halfLife(source)).toBe(expected);
         });
@@ -220,7 +220,6 @@ describe('ElasticsearchService', () => {
         it.each([
             ['slack', 'timestamp'], ['gmail', 'date'], ['calendar', 'start'],
             ['jira', 'updatedAt'], ['drive', 'updatedAt'], ['confluence', 'updatedAt'],
-            ['github', 'updatedAt'],
         ] as [DataSource, string][])('should return "%s" for %s', (source, expected) => {
             expect(field(source)).toBe(expected);
         });
@@ -266,17 +265,6 @@ describe('ElasticsearchService', () => {
             expect(ctxType('calendar', {})).toBe('calendar');
         });
 
-        it('should return "pull_request" for github pr_comment', () => {
-            expect(ctxType('github', { type: 'pr_comment' })).toBe('pull_request');
-        });
-
-        it('should return "pull_request" for github pr_review', () => {
-            expect(ctxType('github', { type: 'pr_review' })).toBe('pull_request');
-        });
-
-        it('should return "repository" for github issue', () => {
-            expect(ctxType('github', { type: 'issue' })).toBe('repository');
-        });
     });
 
     describe('resolveParentDocumentId', () => {
@@ -351,11 +339,6 @@ describe('ElasticsearchService', () => {
             expect(build('calendar', {})).toEqual({ source: 'calendar' });
         });
 
-        it('should use parentId for github, fallback to repo', () => {
-            expect(build('github', { parentId: 'pr-1' })).toEqual({ parentId: 'pr-1' });
-            expect(build('github', { repo: 'org/repo' })).toEqual({ repo: 'org/repo' });
-            expect(build('github', {})).toBeNull();
-        });
     });
 
     describe('buildContextWhereClause', () => {
@@ -386,17 +369,12 @@ describe('ElasticsearchService', () => {
             expect(build('confluence', { space: 'ENG' })).toEqual({ space: 'ENG' });
         });
 
-        it('should use repo for github', () => {
-            expect(build('github', { repo: 'org/repo' })).toEqual({ repo: 'org/repo' });
-        });
-
         it('should return null when no matching metadata exists', () => {
             expect(build('slack', {})).toBeNull();
             expect(build('gmail', {})).toBeNull();
             expect(build('jira', {})).toBeNull();
             expect(build('drive', {})).toBeNull();
             expect(build('confluence', {})).toBeNull();
-            expect(build('github', {})).toBeNull();
         });
     });
 
@@ -536,14 +514,14 @@ describe('ElasticsearchService', () => {
 
         it('should handle pre-chunked documents', async () => {
             const doc = {
-                id: 'github_file_1',
-                source: 'github' as DataSource,
+                id: 'drive_file_1',
+                source: 'drive' as DataSource,
                 content: 'Full file content',
-                metadata: { title: 'app.ts', source: 'github' },
+                metadata: { title: 'app.ts', source: 'drive' },
                 preChunked: { chunks: ['chunk one', 'chunk two'] },
             } as any;
 
-            await service.upsertDocuments('github', [doc]);
+            await service.upsertDocuments('drive', [doc]);
 
             expect(mockEsClient.bulk).toHaveBeenCalled();
             const bulkCall = mockEsClient.bulk.mock.calls[0][0];
@@ -551,17 +529,17 @@ describe('ElasticsearchService', () => {
 
             const indexActions = operations.filter((op: any) => op.index);
             expect(indexActions).toHaveLength(2);
-            expect(indexActions[0].index._id).toBe('github_file_1_chunk_0');
-            expect(indexActions[1].index._id).toBe('github_file_1_chunk_1');
+            expect(indexActions[0].index._id).toBe('drive_file_1_chunk_0');
+            expect(indexActions[1].index._id).toBe('drive_file_1_chunk_1');
 
             // Check content includes context header
-            const firstChunkIdx = operations.findIndex((op: any) => op.index?._id === 'github_file_1_chunk_0');
+            const firstChunkIdx = operations.findIndex((op: any) => op.index?._id === 'drive_file_1_chunk_0');
             const chunkBody = operations[firstChunkIdx + 1];
             expect(chunkBody.content).toContain('chunk one');
             expect(chunkBody.content).toContain('Document: app.ts');
             expect(chunkBody.chunkIndex).toBe(0);
             expect(chunkBody.totalChunks).toBe(2);
-            expect(chunkBody.parentDocId).toBe('github_file_1');
+            expect(chunkBody.parentDocId).toBe('drive_file_1');
         });
 
         it('should route unchanged content to metadata-only update (no embedding generation)', async () => {
@@ -1128,45 +1106,6 @@ describe('ElasticsearchService', () => {
     });
 
     // ─── computeEngagementScore ──────────────────────────────────────────
-
-    describe('computeEngagementScore', () => {
-        const engagementScore = (result: SearchResult) =>
-            (service as any).computeEngagementScore(result);
-
-        it('should compute github engagement from reactions and labels', () => {
-            const result: SearchResult = {
-                id: 'gh-1',
-                source: 'github' as DataSource,
-                content: 'PR content',
-                metadata: { reactionCount: 3, label_count: 2 },
-                score: 0.8,
-            };
-            // 3 * 0.1 + 2 * 0.1 = 0.5
-            expect(engagementScore(result)).toBeCloseTo(0.5, 2);
-        });
-
-        it('should cap github engagement at 1', () => {
-            const result: SearchResult = {
-                id: 'gh-2',
-                source: 'github' as DataSource,
-                content: 'PR content',
-                metadata: { reactionCount: 10, label_count: 5 },
-                score: 0.8,
-            };
-            expect(engagementScore(result)).toBe(1);
-        });
-
-        it('should return 0 for github with no reactions or labels', () => {
-            const result: SearchResult = {
-                id: 'gh-3',
-                source: 'github' as DataSource,
-                content: 'PR content',
-                metadata: {},
-                score: 0.8,
-            };
-            expect(engagementScore(result)).toBe(0);
-        });
-    });
 
     // ─── onModuleDestroy ──────────────────────────────────────────────
 

@@ -131,7 +131,6 @@ Extract all people involved with the topic:
 | Jan 10 | [PROJ-30] created: "Implement [topic]" | Jira |
 | Jan 15 | Design doc shared: "[Topic] Architecture" | Drive |
 | Jan 20 | Sprint planning — topic prioritized | Calendar |
-| Feb 1 | PR #200 opened: "Initial [topic] implementation" | GitHub |
 | Feb 5 | @alice raised concerns in email thread | Gmail |
 | Feb 8 | Status update in #engineering | Slack |
 
@@ -139,7 +138,7 @@ Extract all people involved with the topic:
 [Narrative summary of where things stand right now]
 
 ### Open Items
-[List of open Jira issues, GitHub PRs, pending decisions]
+[List of open Jira issues, pending decisions]
 
 ### Recent Activity
 [What happened in the last few days]

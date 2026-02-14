@@ -4,7 +4,7 @@ Track approaching deadlines from calendar events, Jira due dates, and mentioned 
 
 ## Purpose
 
-Scans all connectors for items with upcoming deadlines or due dates. Creates a unified timeline of what's coming up so nothing gets missed.
+Scans connectors for items with upcoming deadlines or due dates. Creates a unified timeline of what's coming up so nothing gets missed.
 
 ## Inputs
 
@@ -66,26 +66,7 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
 - Separate overdue items from upcoming items
 - For each: extract issue key, title, due date, assignee, status, url
 
-### Step 4: Find GitHub Milestones
-
-```bash
-curl -X POST "${COLLECTOR_API_URL}/search" \
-  -H "x-api-key: ${COLLECTOR_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "milestone deadline release due",
-    "sources": ["github"],
-    "searchType": "hybrid",
-    "where": { "state": "open" },
-    "limit": 15
-  }'
-```
-
-**Processing:**
-- Look for issues/PRs with milestones that have due dates
-- For each: extract title, milestone, due date, url
-
-### Step 5: Find Deadline Mentions in Communications
+### Step 4: Find Deadline Mentions in Communications
 
 ```bash
 curl -X POST "${COLLECTOR_API_URL}/search" \
@@ -105,7 +86,7 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
 - Extract mentioned dates and associate them with the context
 - Be conservative — only flag items where a clear deadline is mentioned
 
-### Step 6: Compile Timeline
+### Step 5: Compile Timeline
 
 Sort all items by deadline date ascending. Flag items by urgency:
 - 🔴 **Overdue**: Past due date
@@ -131,14 +112,12 @@ Sort all items by deadline date ascending. Flag items by urgency:
 | Item | Source | Due Date |
 |------|--------|----------|
 | [PROJ-55] API migration | Jira | Feb 11 |
-| PR #234 review | GitHub | Feb 11 |
 
 ### 🔵 This Week
 | Item | Source | Due Date |
 |------|--------|----------|
 | Sprint Review prep | Calendar | Feb 13 |
 | Design doc feedback | Gmail | Feb 14 |
-| Release v2.1 | GitHub | Feb 15 |
 
 ### Mentioned Deadlines (from conversations)
 - "Let's finalize the API by Friday" — @alice in #backend (Feb 8)

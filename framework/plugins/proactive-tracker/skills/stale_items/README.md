@@ -46,27 +46,7 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
 - Sort by staleness (oldest update first)
 - For each: extract title, status, last update date, assignee, url
 
-### Step 3: Find Stale GitHub Items
-
-```bash
-curl -X POST "${COLLECTOR_API_URL}/search" \
-  -H "x-api-key: ${COLLECTOR_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "open pull request issue stale",
-    "sources": ["github"],
-    "searchType": "hybrid",
-    "where": { "state": "open" },
-    "limit": 20
-  }'
-```
-
-**Processing:**
-- Filter to items where `metadata.updatedAt` < `cutoff_date`
-- Flag PRs with no review activity as particularly stale
-- Sort by age descending
-
-### Step 4: Find Stale Documents
+### Step 3: Find Stale Documents
 
 ```bash
 curl -X POST "${COLLECTOR_API_URL}/search" \
@@ -86,7 +66,7 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
 - Look for documents with "draft", "WIP", "review" in the title — these are particularly likely forgotten
 - Sort by last modified ascending
 
-### Step 5: Find Old Unresolved Threads
+### Step 4: Find Old Unresolved Threads
 
 ```bash
 curl -X POST "${COLLECTOR_API_URL}/search" \
@@ -105,7 +85,7 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
 - Identify threads where the user was involved but no recent activity
 - Only include threads with open-ended questions or unresolved discussions
 
-### Step 6: Format Output
+### Step 5: Format Output
 
 ```markdown
 ## 🕸️ Stale Items (X total)
@@ -115,12 +95,6 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
 |-------|--------|-------------|-----|
 | [PROJ-18] Update onboarding flow | In Progress | Jan 15 | 26d |
 | [PROJ-33] Fix caching layer | To Do | Jan 22 | 19d |
-
-### GitHub (X items)
-| Item | Type | Last Updated | Age |
-|------|------|-------------|-----|
-| PR #189: Refactor auth | PR | Jan 20 | 21d |
-| Issue #45: Memory leak | Issue | Jan 25 | 16d |
 
 ### Documents (X items)
 | Document | Source | Last Modified | Age |

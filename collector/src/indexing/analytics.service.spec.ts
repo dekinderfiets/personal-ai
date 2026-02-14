@@ -252,7 +252,7 @@ describe('AnalyticsService', () => {
 
     describe('updateAggregateStats', () => {
         it('creates new stats from scratch for first run', async () => {
-            await service.recordRunComplete('github', {
+            await service.recordRunComplete('drive', {
                 documentsProcessed: 100,
                 documentsNew: 100,
                 documentsUpdated: 0,
@@ -262,12 +262,12 @@ describe('AnalyticsService', () => {
 
             // Stats should have been set
             expect(redisMock.set).toHaveBeenCalledWith(
-                'index:analytics:stats:github',
+                'index:analytics:stats:drive',
                 expect.any(String),
             );
 
             const statsJson = redisMock.set.mock.calls.find(
-                c => c[0] === 'index:analytics:stats:github',
+                c => c[0] === 'index:analytics:stats:drive',
             )?.[1];
             const stats: SourceStats = JSON.parse(statsJson!);
             expect(stats.totalRuns).toBe(1);
@@ -438,10 +438,10 @@ describe('AnalyticsService', () => {
 
     describe('getSourceStats', () => {
         it('returns default stats when no data exists', async () => {
-            const stats = await service.getSourceStats('github');
+            const stats = await service.getSourceStats('drive');
 
             expect(stats).toEqual({
-                source: 'github',
+                source: 'drive',
                 totalRuns: 0,
                 successfulRuns: 0,
                 failedRuns: 0,

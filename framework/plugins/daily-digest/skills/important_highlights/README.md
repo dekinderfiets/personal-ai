@@ -4,7 +4,7 @@ Identify high-priority items across all sources that need immediate attention.
 
 ## Purpose
 
-Scans indexed data to surface critical items: overdue tasks, unanswered important emails, upcoming deadlines, pending PR reviews, and any other items that require urgent attention. Acts as an "alert system" for the daily digest.
+Scans indexed data to surface critical items: overdue tasks, unanswered important emails, upcoming deadlines, and any other items that require urgent attention. Acts as an "alert system" for the daily digest.
 
 ## Inputs
 
@@ -84,26 +84,7 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
 - Check Jira issues for approaching due dates
 - Sort by urgency (today > tomorrow > this week)
 
-### Step 5: Find Pending Reviews
-
-```bash
-curl -X POST "${COLLECTOR_API_URL}/search" \
-  -H "x-api-key: ${COLLECTOR_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "review requested pending approval pull request",
-    "sources": ["github"],
-    "searchType": "hybrid",
-    "where": { "state": "open" },
-    "limit": 10
-  }'
-```
-
-**Processing:**
-- Filter to PRs where `metadata.is_assigned_to_me` is true or user is in reviewers
-- Note how long the review has been pending (from `metadata.createdAt`)
-
-### Step 6: Find Unresolved Slack Threads
+### Step 5: Find Unresolved Slack Threads
 
 ```bash
 curl -X POST "${COLLECTOR_API_URL}/search" \
@@ -122,7 +103,7 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
 - Look for messages that mention the user or are in DMs
 - Identify questions directed at the user that may be unanswered
 
-### Step 7: Compile and Prioritize Highlights
+### Step 6: Compile and Prioritize Highlights
 
 Assign each item a severity level:
 - 🔴 **Critical**: Overdue tasks, missed deadlines, urgent emails > 24h without response
@@ -140,7 +121,6 @@ Assign each item a severity level:
 
 ### 🟡 Warning (X items)
 - **Deadline tomorrow: [PROJ-55] API migration** — Due Feb 11 [→ link]
-- **PR review pending** #234: "Add auth middleware" — Waiting 28h [→ link]
 
 ### 🔵 Info (X items)
 - **New Slack mention** in #design by @carol — "Thoughts on the mockup?" [→ link]

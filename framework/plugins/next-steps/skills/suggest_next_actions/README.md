@@ -87,20 +87,6 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
   }'
 ```
 
-**Pending GitHub reviews and issues:**
-```bash
-curl -X POST "${COLLECTOR_API_URL}/search" \
-  -H "x-api-key: ${COLLECTOR_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "review requested assigned open pull request",
-    "sources": ["github"],
-    "searchType": "hybrid",
-    "where": { "state": "open" },
-    "limit": 15
-  }'
-```
-
 ### Step 3: Score and Rank Items
 
 Apply this scoring framework to each item:
@@ -149,27 +135,22 @@ Select the top `max_suggestions` items by composite score. For each:
 ```markdown
 ## 🎯 Suggested Next Actions
 
-### 1. Respond to PR review #234
-**Why**: Review requested 28h ago by Alice, blocking the auth feature branch
-**Source**: GitHub — [PR #234: Add auth middleware](link)
-**Effort**: Quick (~15 min)
-
-### 2. Update PROJ-42: Fix login bug
+### 1. Update PROJ-42: Fix login bug
 **Why**: High priority, assigned to you, no update in 5 days
 **Source**: Jira — [PROJ-42](link)
 **Effort**: Deep (~2h)
 
-### 3. Reply to CEO email: Q4 Budget Review
+### 2. Reply to CEO email: Q4 Budget Review
 **Why**: Direct email, sent 24h ago, no response yet
 **Source**: Gmail — [Q4 Budget Review](link)
 **Effort**: Medium (~30 min)
 
-### 4. Answer @bob in #engineering
+### 3. Answer @bob in #engineering
 **Why**: Direct question about API design, waiting since yesterday
 **Source**: Slack — [#engineering thread](link)
 **Effort**: Quick (~10 min)
 
-### 5. Prepare for Sprint Review (2:00 PM today)
+### 4. Prepare for Sprint Review (2:00 PM today)
 **Why**: Meeting in 3 hours, prep needed
 **Source**: Calendar — [Sprint Review](link)
 **Effort**: Medium (~30 min)

@@ -199,13 +199,13 @@ describe('CursorService', () => {
         });
 
         it('getDocumentHash returns stored hash', async () => {
-            await service.setDocumentHash('github', 'file-abc', 'sha256:xyz');
-            const result = await service.getDocumentHash('github', 'file-abc');
+            await service.setDocumentHash('drive', 'file-abc', 'sha256:xyz');
+            const result = await service.getDocumentHash('drive', 'file-abc');
             expect(result).toBe('sha256:xyz');
         });
 
         it('getDocumentHash returns null for missing document', async () => {
-            const result = await service.getDocumentHash('github', 'nonexistent');
+            const result = await service.getDocumentHash('drive', 'nonexistent');
             expect(result).toBeNull();
         });
     });

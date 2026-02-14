@@ -51,7 +51,7 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
 
 ### Step 3: Query Active Tasks
 
-Fetch Jira issues and GitHub items assigned to the user.
+Fetch Jira issues assigned to the user.
 
 **Jira open issues:**
 ```bash
@@ -66,24 +66,10 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
   }'
 ```
 
-**GitHub assigned issues and PRs:**
-```bash
-curl -X POST "${COLLECTOR_API_URL}/search" \
-  -H "x-api-key: ${COLLECTOR_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "assigned open pull request issue",
-    "sources": ["github"],
-    "searchType": "hybrid",
-    "where": { "state": "open" },
-    "limit": 20
-  }'
-```
-
 **Processing:**
 - Filter Jira results to items where `metadata.is_assigned_to_me` is true or status is "In Progress" / "To Do"
 - Sort by priority: Critical > High > Medium > Low
-- For each task, extract: title, project/repo, status, priority, url
+- For each task, extract: title, project, status, priority, url
 
 ### Step 4: Query Recent Messages
 

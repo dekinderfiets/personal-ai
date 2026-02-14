@@ -36,7 +36,7 @@ describe('AnalyticsController', () => {
 
             expect(result).toEqual(stats);
             expect(mockAnalyticsService.getSystemStats).toHaveBeenCalledWith(
-                ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar', 'github'],
+                ['jira', 'slack', 'gmail', 'drive', 'confluence', 'calendar'],
             );
         });
     });
@@ -169,7 +169,7 @@ describe('AnalyticsController', () => {
             expect(sentBody.version).toBe(1);
             expect(sentBody.exportedAt).toBeDefined();
             expect(sentBody.settings).toBeDefined();
-            expect(Object.keys(sentBody.settings)).toHaveLength(7);
+            expect(Object.keys(sentBody.settings)).toHaveLength(6);
         });
     });
 

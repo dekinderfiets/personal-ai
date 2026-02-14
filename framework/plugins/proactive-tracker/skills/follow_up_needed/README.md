@@ -4,7 +4,7 @@ Detect messages and emails that were sent but never received a response, and PR 
 
 ## Purpose
 
-Tracks outbound communications and requests that haven't received responses. Identifies emails you sent with no reply, Slack messages that went unanswered, and PR reviews you requested that are still pending.
+Tracks outbound communications and requests that haven't received responses. Identifies emails you sent with no reply and Slack messages that went unanswered.
 
 ## Inputs
 
@@ -74,29 +74,7 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
 - If no replies or only user's own replies, flag as needing follow-up
 - For each: extract channel, message snippet, date, url
 
-### Step 4: Find Pending PR Reviews
-
-```bash
-curl -X POST "${COLLECTOR_API_URL}/search" \
-  -H "x-api-key: ${COLLECTOR_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "pull request review open requested",
-    "sources": ["github"],
-    "searchType": "hybrid",
-    "where": { "state": "open" },
-    "startDate": "<lookback_start>",
-    "limit": 15
-  }'
-```
-
-**Processing:**
-- Find PRs authored by the user (`metadata.is_author` = true) that are still open and awaiting review
-- Find PRs where the user is a requested reviewer (`metadata.is_assigned_to_me` = true)
-- Calculate how long each review has been pending
-- For each: extract PR title, repo, requested reviewers, age, url
-
-### Step 5: Find Unanswered Confluence Comments
+### Step 4: Find Unanswered Confluence Comments
 
 ```bash
 curl -X POST "${COLLECTOR_API_URL}/search" \
@@ -116,7 +94,7 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
 - Look for comments by the user with questions that haven't been addressed
 - Check for comments on the user's pages that may need responses
 
-### Step 6: Format Output
+### Step 5: Format Output
 
 ```markdown
 ## 📬 Follow-Ups Needed (X total)
@@ -132,12 +110,6 @@ curl -X POST "${COLLECTOR_API_URL}/search" \
 |---------|---------|------|-------------|
 | #backend | "Can someone review the migration plan?" | Feb 6 | 4d |
 | DM @carol | "Did you get the design specs?" | Feb 8 | 2d |
-
-### PR Reviews Pending (X)
-| PR | Repo | Waiting For | Age |
-|----|------|-------------|-----|
-| #234 Add auth | myapp | @alice, @bob | 3d |
-| #256 Fix tests | mylib | @carol | 1d |
 
 ### Other Follow-Ups (X)
 [Confluence comments, etc.]
