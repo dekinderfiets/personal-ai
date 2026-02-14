@@ -83,6 +83,9 @@ export interface ConnectorSettings {
   domains?: string[];
   senders?: string[];
   folderIds?: string[];
+  sharedDriveFolderIds?: string[];  // Drive — Shared Drive folder selections
+  sharedWithMe?: boolean;            // Drive — include shared with me
+  starred?: boolean;                 // Drive — include starred
   spaceKeys?: string[];
   calendarIds?: string[];
   startDate?: string;

@@ -58,27 +58,66 @@ export class DriveConnector extends BaseConnector {
             const lastSync = cursor?.lastSync;
             const pageToken = cursor?.syncToken;
 
-            const conditions = ["mimeType != 'application/vnd.google-apps.folder'", 'trashed = false'];
+            const hasMyDriveFolders = !!request.folderIds?.length;
+            const hasSharedDriveFolders = !!request.sharedDriveFolderIds?.length;
+            const hasSharedWithMe = !!request.sharedWithMe;
+            const hasStarred = !!request.starred;
+
+            // Base conditions applied to ALL queries
+            const baseConditions = ["mimeType != 'application/vnd.google-apps.folder'", 'trashed = false'];
             if (lastSync && !request.fullReindex) {
-                conditions.push(`modifiedTime > '${lastSync}'`);
+                baseConditions.push(`modifiedTime > '${lastSync}'`);
             }
-            if (request.folderIds?.length) {
-                // Recursively resolve all subfolder IDs under each configured folder
-                const allFolderIds = await this.resolveAllSubfolderIds(token, request.folderIds);
+
+            // Build source-specific OR clauses
+            const sourceClauses: string[] = [];
+
+            if (hasMyDriveFolders) {
+                const allFolderIds = await this.resolveAllSubfolderIds(token, request.folderIds!);
                 const folderConditions = allFolderIds.map(id => `'${id}' in parents`).join(' or ');
-                conditions.push(`(${folderConditions})`);
+                sourceClauses.push(`(${folderConditions})`);
+            }
+
+            if (hasSharedDriveFolders) {
+                const allFolderIds = await this.resolveAllSubfolderIds(token, request.sharedDriveFolderIds!);
+                const folderConditions = allFolderIds.map(id => `'${id}' in parents`).join(' or ');
+                sourceClauses.push(`(${folderConditions})`);
+            }
+
+            if (hasSharedWithMe) {
+                sourceClauses.push('sharedWithMe = true');
+            }
+
+            if (hasStarred) {
+                sourceClauses.push('starred = true');
+            }
+
+            // Combine: base AND (source1 OR source2 OR ...)
+            const conditions = [...baseConditions];
+            if (sourceClauses.length > 0) {
+                conditions.push(`(${sourceClauses.join(' or ')})`);
+            }
+
+            const needsAllDrives = hasSharedDriveFolders || hasSharedWithMe || hasStarred;
+            const params: Record<string, any> = {
+                q: conditions.join(' and '),
+                pageSize: 100,
+                pageToken: pageToken || undefined,
+                fields: 'nextPageToken,files(id,name,mimeType,parents,owners,createdTime,modifiedTime,webViewLink,permissions)',
+                orderBy: 'modifiedTime asc',
+            };
+            if (needsAllDrives) {
+                params.includeItemsFromAllDrives = true;
+                params.supportsAllDrives = true;
+                if (!hasMyDriveFolders && !hasSharedDriveFolders) {
+                    params.corpora = 'allDrives';
+                }
             }
 
             const response = await axios.get<{ files: DriveFile[]; nextPageToken?: string }>(
                 'https://www.googleapis.com/drive/v3/files', {
                 headers: { 'Authorization': `Bearer ${token}` },
-                params: {
-                    q: conditions.join(' and '),
-                    pageSize: 100,
-                    pageToken: pageToken || undefined,
-                    fields: 'nextPageToken,files(id,name,mimeType,parents,owners,createdTime,modifiedTime,webViewLink,permissions)',
-                    orderBy: 'modifiedTime asc', // Process oldest changes first
-                },
+                params,
             });
 
             this.logger.debug(`Found ${response.data.files.length} files to process`);
@@ -272,28 +311,57 @@ export class DriveConnector extends BaseConnector {
         return path;
     }
 
-    async listFolders(parentId?: string): Promise<any[]> {
-        return this.listChildren(parentId, true);
+    async listFolders(parentId?: string, driveId?: string): Promise<any[]> {
+        return this.listChildren(parentId, true, driveId);
     }
 
-    async listChildren(parentId?: string, foldersOnly: boolean = false): Promise<any[]> {
+    async listSharedDrives(): Promise<Array<{ id: string; name: string }>> {
+        const token = await this.googleAuthService.getAccessToken(['https://www.googleapis.com/auth/drive.readonly']);
+        const response = await axios.get<{ drives?: Array<{ id: string; name: string }> }>(
+            'https://www.googleapis.com/drive/v3/drives',
+            {
+                headers: { 'Authorization': `Bearer ${token}` },
+                params: {
+                    pageSize: 100,
+                    fields: 'drives(id,name)',
+                },
+            },
+        );
+        return response.data.drives || [];
+    }
+
+    async listChildren(parentId?: string, foldersOnly: boolean = false, driveId?: string): Promise<any[]> {
         const token = await this.googleAuthService.getAccessToken(['https://www.googleapis.com/auth/drive.readonly']);
 
-        let q = parentId
-            ? `'${parentId}' in parents and trashed = false`
-            : "'root' in parents and trashed = false";
+        let q: string;
+        if (driveId && !parentId) {
+            q = `'${driveId}' in parents and trashed = false`;
+        } else if (parentId) {
+            q = `'${parentId}' in parents and trashed = false`;
+        } else {
+            q = "'root' in parents and trashed = false";
+        }
 
         if (foldersOnly) {
             q += " and mimeType = 'application/vnd.google-apps.folder'";
         }
 
+        const params: Record<string, any> = {
+            q,
+            fields: 'files(id, name, mimeType, iconLink)',
+            orderBy: 'folder,name',
+        };
+
+        if (driveId) {
+            params.corpora = 'drive';
+            params.driveId = driveId;
+            params.includeItemsFromAllDrives = true;
+            params.supportsAllDrives = true;
+        }
+
         const response = await axios.get('https://www.googleapis.com/drive/v3/files', {
             headers: { 'Authorization': `Bearer ${token}` },
-            params: {
-                q,
-                fields: 'files(id, name, mimeType, iconLink)',
-                orderBy: 'folder,name',
-            },
+            params,
         });
 
         return response.data.files || [];
@@ -348,6 +416,8 @@ export class DriveConnector extends BaseConnector {
                                 fields: 'nextPageToken,files(id)',
                                 pageSize: 100,
                                 pageToken: pageToken || undefined,
+                                supportsAllDrives: true,
+                                includeItemsFromAllDrives: true,
                             },
                         },
                     );

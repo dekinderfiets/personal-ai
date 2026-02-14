@@ -66,6 +66,9 @@ export class IndexingService {
         switch (source) {
             case 'drive':
                 request.folderIds = request.folderIds || s.folderIds;
+                request.sharedDriveFolderIds = request.sharedDriveFolderIds || s.sharedDriveFolderIds;
+                request.sharedWithMe = request.sharedWithMe ?? s.sharedWithMe;
+                request.starred = request.starred ?? s.starred;
                 break;
             case 'gmail':
                 request.gmailSettings = {
@@ -94,7 +97,15 @@ export class IndexingService {
             case 'jira': return (request.projectKeys || []).sort().join(',');
             case 'slack': return (request.channelIds || []).sort().join(',');
             case 'confluence': return (request.spaceKeys || []).sort().join(',');
-            case 'drive': return (request.folderIds || []).sort().join(',');
+            case 'drive': {
+                const parts = [
+                    (request.folderIds || []).sort().join(','),
+                    (request.sharedDriveFolderIds || []).sort().join(','),
+                    request.sharedWithMe ? 'swm' : '',
+                    request.starred ? 'star' : '',
+                ];
+                return parts.filter(Boolean).join('|');
+            }
             case 'calendar': return (request.calendarIds || []).sort().join(',');
             case 'gmail': {
                 const g = request.gmailSettings;
@@ -465,9 +476,14 @@ export class IndexingService {
         this.logger.log(`Deleted document ${documentId} and its children from ${source}.`);
     }
 
-    async getDriveFolders(parentId?: string): Promise<any[]> {
+    async getDriveFolders(parentId?: string, driveId?: string): Promise<any[]> {
         const connector = this.getConnector('drive') as DriveConnector;
-        return connector.listFolders(parentId);
+        return connector.listFolders(parentId, driveId);
+    }
+
+    async getDriveSharedDrives(): Promise<any[]> {
+        const connector = this.getConnector('drive') as DriveConnector;
+        return connector.listSharedDrives();
     }
 
     async getDriveChildren(parentId?: string): Promise<any[]> {

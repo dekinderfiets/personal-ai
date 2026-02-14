@@ -196,6 +196,9 @@ export interface IndexRequest {
     channelIds?: string[];     // For Slack
     spaceKeys?: string[];      // For Confluence
     folderIds?: string[];      // For Drive
+    sharedDriveFolderIds?: string[];  // For Drive — Shared Drive folders
+    sharedWithMe?: boolean;    // For Drive — include "shared with me" files
+    starred?: boolean;         // For Drive — include starred files
     gmailSettings?: GmailSettings;
     calendarIds?: string[];    // For Calendar
 }
@@ -231,6 +234,9 @@ export interface IndexResponse {
 // Settings Types
 export interface DriveSettings {
     folderIds: string[];
+    sharedDriveFolderIds?: string[];
+    sharedWithMe?: boolean;
+    starred?: boolean;
 }
 
 export interface GmailSettings {

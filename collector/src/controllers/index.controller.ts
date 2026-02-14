@@ -163,10 +163,19 @@ export class IndexController {
         return this.indexingService.getSlackChannels();
     }
 
-    @Get('discovery/drive/folders')
-    async discoverDriveFolders(@Query('parentId') parentId?: string): Promise<any[]> {
+    @Get('discovery/drive/shared-drives')
+    async discoverDriveSharedDrives(): Promise<any[]> {
         await this.ensureSourceEnabled('drive');
-        return this.indexingService.getDriveFolders(parentId);
+        return this.indexingService.getDriveSharedDrives();
+    }
+
+    @Get('discovery/drive/folders')
+    async discoverDriveFolders(
+        @Query('parentId') parentId?: string,
+        @Query('driveId') driveId?: string,
+    ): Promise<any[]> {
+        await this.ensureSourceEnabled('drive');
+        return this.indexingService.getDriveFolders(parentId, driveId);
     }
 
     @Get('discovery/confluence/spaces')
