@@ -86,6 +86,15 @@ function formatRelativeTime(dateStr: string): string {
   return `${Math.floor(diff / 86_400_000)}d ago`;
 }
 
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+}
+
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
@@ -621,6 +630,16 @@ const Dashboard: React.FC = () => {
                         {status.lastSync ? formatRelativeTime(status.lastSync) : 'Never'}
                       </Typography>
                     </Box>
+                    {status.executionTime != null && (
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography variant="body2" color="text.secondary">
+                          Duration
+                        </Typography>
+                        <Typography variant="body2" fontWeight={500}>
+                          {formatDuration(status.executionTime)}
+                        </Typography>
+                      </Box>
+                    )}
                     {healthStatuses[status.source]?.latencyMs != null && (
                       <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                         <Typography variant="body2" color="text.secondary">
