@@ -28,6 +28,7 @@ import { AnalyticsController } from './controllers/analytics.controller';
 import { EventsController } from './controllers/events.controller';
 import { HealthController } from './controllers/health.controller';
 import { IndexController } from './controllers/index.controller';
+import { ProjectsController } from './controllers/projects.controller';
 import { RootController } from './controllers/root.controller';
 import { SearchController } from './controllers/search.controller';
 import { WorkflowsController } from './controllers/workflows.controller';
@@ -40,6 +41,7 @@ import { FileSaverService } from './indexing/file-saver.service';
 import { ConnectorHealthService } from './indexing/health.service';
 import { IndexingService } from './indexing/indexing.service';
 import { SettingsService } from './indexing/settings.service';
+import { ProjectsService } from './projects/projects.service';
 import { TemporalModule } from './temporal/temporal.module';
 
 @Module({
@@ -68,7 +70,7 @@ import { TemporalModule } from './temporal/temporal.module';
             : []),
         TemporalModule,
     ],
-    controllers: [RootController, HealthController, IndexController, SearchController, EventsController, AnalyticsController, WorkflowsController],
+    controllers: [RootController, HealthController, IndexController, SearchController, EventsController, AnalyticsController, WorkflowsController, ProjectsController],
     providers: [
         CursorService,
         SettingsService,
@@ -86,6 +88,7 @@ import { TemporalModule } from './temporal/temporal.module';
         GoogleAuthService,
         AnalyticsService,
         ConnectorHealthService,
+        ProjectsService,
     ],
 })
 // eslint-disable-next-line @typescript-eslint/no-extraneous-class -- NestJS requires a module class
