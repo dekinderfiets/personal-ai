@@ -1300,7 +1300,13 @@ const Settings: React.FC = () => {
                   control={
                     <Switch
                       checked={isEnabled(selectedSource)}
-                      onChange={(e) => setSourceEnabled(selectedSource, e.target.checked)}
+                      onChange={async (e) => {
+                        const enabling = e.target.checked;
+                        await setSourceEnabled(selectedSource, enabling);
+                        if (enabling) {
+                          loadDiscoveryData(selectedSource);
+                        }
+                      }}
                     />
                   }
                   label={
