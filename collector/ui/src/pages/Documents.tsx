@@ -300,7 +300,7 @@ const Documents: React.FC = () => {
 
   const handleSearchClick = () => {
     if (query) {
-      setSortMode((prev) => prev === 'date' && !browseMode ? prev : 'relevance');
+      setSortMode('relevance');
       handleSearch(1);
     }
   };
