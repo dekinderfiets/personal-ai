@@ -68,3 +68,10 @@ export const temporalConfig = registerAs('temporal', () => ({
     namespace: process.env.TEMPORAL_NAMESPACE || 'default',
     taskQueue: process.env.TEMPORAL_TASK_QUEUE || 'collector-indexing',
 }));
+
+export const codeAgentConfig = registerAs('codeAgent', () => ({
+    url: process.env.CODE_AGENT_URL || 'http://code-agent:8085',
+    collectorApiUrl: process.env.COLLECTOR_API_URL || 'http://collector:8087/api/v1',
+    collectorApiKey: process.env.API_KEY || '',
+    mcpServerPath: process.env.MCP_SERVER_PATH || '/opt/collector-mcp/dist/index.js',
+}));

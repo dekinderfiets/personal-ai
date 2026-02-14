@@ -1,6 +1,8 @@
-import { Body, Controller, Delete, Get, HttpException, HttpStatus, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpException, HttpStatus, Param, Patch, Post, Query, Sse, UseGuards } from '@nestjs/common';
+import { map,Observable } from 'rxjs';
 
 import { ApiKeyGuard } from '../auth/api-key.guard';
+import { DiscoveryEvent,DiscoveryService } from '../projects/discovery.service';
 import { ProjectsService } from '../projects/projects.service';
 import {
     BatchReviewRequest,
@@ -16,7 +18,10 @@ import {
 @Controller('projects')
 @UseGuards(ApiKeyGuard)
 export class ProjectsController {
-    constructor(private projectsService: ProjectsService) {}
+    constructor(
+        private projectsService: ProjectsService,
+        private discoveryService: DiscoveryService,
+    ) {}
 
     // --- Projects CRUD ---
 
@@ -73,7 +78,9 @@ export class ProjectsController {
 
     @Post('proposals')
     async createProposal(@Body() body: CreateProposalRequest): Promise<Proposal> {
-        return this.projectsService.createProposal(body);
+        const proposal = await this.projectsService.createProposal(body);
+        this.discoveryService.notifyProposalCreated(proposal);
+        return proposal;
     }
 
     @Post('proposals/batch-review')
@@ -104,5 +111,32 @@ export class ProjectsController {
         } catch (e) {
             throw new HttpException((e as Error).message, HttpStatus.NOT_FOUND);
         }
+    }
+
+    // --- Discovery ---
+
+    @Post('discover')
+    async startDiscovery() {
+        return this.discoveryService.startDiscovery();
+    }
+
+    @Get('discover/:sessionId')
+    async getSession(@Param('sessionId') sessionId: string) {
+        const session = await this.projectsService.getSession(sessionId);
+        if (!session) throw new HttpException('Session not found', HttpStatus.NOT_FOUND);
+        return session;
+    }
+
+    @Sse('discover/:sessionId/events')
+    discoveryEvents(@Param('sessionId') sessionId: string): Observable<{ data: string }> {
+        const subject = this.discoveryService.getSessionEvents(sessionId);
+        if (!subject) {
+            throw new HttpException('Session not found or already completed', HttpStatus.NOT_FOUND);
+        }
+        return subject.pipe(
+            map((event: DiscoveryEvent) => ({
+                data: JSON.stringify(event),
+            })),
+        );
     }
 }

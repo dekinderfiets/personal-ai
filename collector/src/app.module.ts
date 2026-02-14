@@ -6,6 +6,7 @@ import { join } from 'path';
 
 import {
     appConfig,
+    codeAgentConfig,
     cohereConfig,
     confluenceConfig,
     elasticsearchConfig,
@@ -41,6 +42,7 @@ import { FileSaverService } from './indexing/file-saver.service';
 import { ConnectorHealthService } from './indexing/health.service';
 import { IndexingService } from './indexing/indexing.service';
 import { SettingsService } from './indexing/settings.service';
+import { DiscoveryService } from './projects/discovery.service';
 import { ProjectsService } from './projects/projects.service';
 import { TemporalModule } from './temporal/temporal.module';
 
@@ -60,6 +62,7 @@ import { TemporalModule } from './temporal/temporal.module';
                 temporalConfig,
                 openaiConfig,
                 cohereConfig,
+                codeAgentConfig,
             ],
         }),
         ...(existsSync(join(__dirname, '..', 'public'))
@@ -89,6 +92,7 @@ import { TemporalModule } from './temporal/temporal.module';
         AnalyticsService,
         ConnectorHealthService,
         ProjectsService,
+        DiscoveryService,
     ],
 })
 // eslint-disable-next-line @typescript-eslint/no-extraneous-class -- NestJS requires a module class
