@@ -310,3 +310,5 @@ export interface DocumentStats {
     sources: Array<{ source: DataSource; count: number }>;
     total: number;
 }
+
+export * from './projects';
