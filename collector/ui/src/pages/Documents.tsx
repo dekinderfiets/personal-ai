@@ -5,7 +5,7 @@ import {
   LinearProgress, IconButton, Tooltip, Pagination, InputAdornment, Divider,
   Checkbox, Dialog, DialogTitle, DialogContent, DialogActions,
 } from '@mui/material';
-import { alpha } from '@mui/material/styles';
+import { alpha, useTheme } from '@mui/material/styles';
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
 import TuneIcon from '@mui/icons-material/Tune';
@@ -20,11 +20,15 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import {
-  DataSource, SearchResult, ALL_SOURCES, DEFAULT_SEARCH_SOURCES, SOURCE_COLORS, SOURCE_LABELS, DocumentStats,
+  DataSource, SearchResult, ALL_SOURCES, DEFAULT_SEARCH_SOURCES, SOURCE_COLORS, SOURCE_COLORS_DARK, SOURCE_LABELS, DocumentStats,
 } from '../types/api';
 import { useEnabledSources } from '../hooks/useEnabledSources';
 
 const API_BASE_URL = '/api/v1';
+
+/** Pick the right source color for the current theme mode */
+const getSourceColor = (source: DataSource, mode: 'light' | 'dark') =>
+  mode === 'dark' ? SOURCE_COLORS_DARK[source] : SOURCE_COLORS[source];
 
 // ---------------------------------------------------------------------------
 // Types
@@ -100,6 +104,7 @@ const DOC_TYPE_SOURCE_MAP: Record<string, DataSource[]> = {
 };
 
 const Documents: React.FC = () => {
+  const theme = useTheme();
   const { enabledSources } = useEnabledSources();
 
   // Search controls
@@ -464,8 +469,8 @@ const Documents: React.FC = () => {
                 label={`${SOURCE_LABELS[source]}: ${count.toLocaleString()}`}
                 size="small"
                 sx={{
-                  backgroundColor: (theme) => alpha(SOURCE_COLORS[source], theme.palette.mode === 'dark' ? 0.2 : 0.1),
-                  color: SOURCE_COLORS[source],
+                  backgroundColor: (theme) => alpha(getSourceColor(source, theme.palette.mode), theme.palette.mode === 'dark' ? 0.2 : 0.1),
+                  color: (theme) => getSourceColor(source, theme.palette.mode),
                   fontWeight: 600,
                   fontSize: '0.75rem',
                 }}
@@ -583,15 +588,15 @@ const Documents: React.FC = () => {
                     variant={isSelected ? 'filled' : 'outlined'}
                     size="small"
                     sx={{
-                      borderColor: isSelected ? SOURCE_COLORS[source] : undefined,
-                      backgroundColor: isSelected ? alpha(SOURCE_COLORS[source], 0.15) : 'transparent',
-                      color: isSelected ? SOURCE_COLORS[source] : 'text.secondary',
+                      borderColor: (theme) => isSelected ? getSourceColor(source, theme.palette.mode) : undefined,
+                      backgroundColor: (theme) => isSelected ? alpha(getSourceColor(source, theme.palette.mode), 0.15) : 'transparent',
+                      color: (theme) => isSelected ? getSourceColor(source, theme.palette.mode) : theme.palette.text.secondary,
                       fontWeight: isSelected ? 600 : 400,
                       transition: 'all 0.15s ease',
                       '&:hover': {
-                        backgroundColor: alpha(SOURCE_COLORS[source], 0.1),
-                        borderColor: SOURCE_COLORS[source],
-                        color: SOURCE_COLORS[source],
+                        backgroundColor: (theme) => alpha(getSourceColor(source, theme.palette.mode), 0.1),
+                        borderColor: (theme) => getSourceColor(source, theme.palette.mode),
+                        color: (theme) => getSourceColor(source, theme.palette.mode),
                       },
                     }}
                   />
@@ -830,7 +835,7 @@ const Documents: React.FC = () => {
             {sortedResults.map((result) => {
               const scorePercent = getScorePercent(result);
               const dateStr = getResultDate(result);
-              const sourceColor = SOURCE_COLORS[result.source] || '#666';
+              const resultSourceColor = getSourceColor(result.source, theme.palette.mode);
               const isSelected = selectedIds.has(result.id);
 
               return (
@@ -853,7 +858,7 @@ const Documents: React.FC = () => {
                       sx={{
                         width: 4,
                         minHeight: '100%',
-                        backgroundColor: sourceColor,
+                        backgroundColor: resultSourceColor,
                         flexShrink: 0,
                       }}
                     />
@@ -872,8 +877,8 @@ const Documents: React.FC = () => {
                           label={SOURCE_LABELS[result.source] || result.source}
                           size="small"
                           sx={{
-                            backgroundColor: alpha(sourceColor, 0.12),
-                            color: sourceColor,
+                            backgroundColor: alpha(resultSourceColor, 0.12),
+                            color: resultSourceColor,
                             fontWeight: 600,
                             fontSize: '0.7rem',
                             height: 22,

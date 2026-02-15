@@ -20,7 +20,7 @@ import {
   DialogActions,
   Snackbar,
 } from '@mui/material';
-import { alpha } from '@mui/material/styles';
+import { alpha, useTheme } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -42,7 +42,7 @@ import MailOutlined from '@mui/icons-material/MailOutlined';
 import CloudOutlined from '@mui/icons-material/CloudOutlined';
 import MenuBookOutlined from '@mui/icons-material/MenuBookOutlined';
 import CalendarMonthOutlined from '@mui/icons-material/CalendarMonthOutlined';
-import { DataSource, SourceInfo, SOURCE_COLORS, SOURCE_LABELS } from '../types/api';
+import { DataSource, SourceInfo, SOURCE_COLORS, SOURCE_COLORS_DARK, SOURCE_LABELS } from '../types/api';
 import { useLocalSettings } from '../hooks/useLocalSettings';
 
 // ---------------------------------------------------------------------------
@@ -205,6 +205,7 @@ const SummaryCard: React.FC<SummaryCardProps> = ({ icon, label, value }) => (
 // ---------------------------------------------------------------------------
 
 const Dashboard: React.FC = () => {
+  const theme = useTheme();
   const navigate = useNavigate();
   const [statuses, setStatuses] = useState<SourceInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -546,7 +547,7 @@ const Dashboard: React.FC = () => {
         >
           {enabledStatuses.map((status) => {
             const source = status.source as DataSource;
-            const sourceColor = SOURCE_COLORS[source] || '#666';
+            const sourceColor = (theme.palette.mode === 'dark' ? SOURCE_COLORS_DARK[source] : SOURCE_COLORS[source]) || '#666';
             const isRunning = status.status === 'running';
             const icon = SOURCE_ICONS[source];
 

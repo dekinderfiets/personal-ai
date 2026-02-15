@@ -13,6 +13,16 @@ export const SOURCE_COLORS: Record<DataSource, string> = {
   calendar: '#4285F4',
 };
 
+// Lighter variants for dark mode readability
+export const SOURCE_COLORS_DARK: Record<DataSource, string> = {
+  jira: '#4C9AFF',
+  slack: '#D4A5D6',
+  gmail: '#F28B82',
+  drive: '#57D9A3',
+  confluence: '#8993A4',
+  calendar: '#78AEFA',
+};
+
 export const SOURCE_LABELS: Record<DataSource, string> = {
   jira: 'Jira',
   slack: 'Slack',

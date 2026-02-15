@@ -29,7 +29,7 @@ import StarOutlinedIcon from '@mui/icons-material/StarOutlined';
 import FolderSharedOutlinedIcon from '@mui/icons-material/FolderSharedOutlined';
 import DriveFileMoveOutlinedIcon from '@mui/icons-material/DriveFileMoveOutlined';
 import {
-  DataSource, ALL_SOURCES, SOURCE_LABELS, SOURCE_COLORS, ConnectorSettings,
+  DataSource, ALL_SOURCES, SOURCE_LABELS, SOURCE_COLORS, SOURCE_COLORS_DARK, ConnectorSettings,
 } from '../types/api';
 import { useLocalSettings } from '../hooks/useLocalSettings';
 import { useEnabledSources } from '../hooks/useEnabledSources';
@@ -1135,7 +1135,9 @@ const Settings: React.FC = () => {
   /*  Layout                                                             */
   /* ================================================================== */
 
-  const sourceColor = selectedSource ? SOURCE_COLORS[selectedSource] : undefined;
+  const sourceColor = selectedSource
+    ? (theme.palette.mode === 'dark' ? SOURCE_COLORS_DARK[selectedSource] : SOURCE_COLORS[selectedSource])
+    : undefined;
 
   return (
     <Box>
@@ -1168,7 +1170,7 @@ const Settings: React.FC = () => {
               const isActive = selectedSource === source;
               const configured = isSourceConfigured(source);
               const enabled = isEnabled(source);
-              const color = SOURCE_COLORS[source];
+              const color = theme.palette.mode === 'dark' ? SOURCE_COLORS_DARK[source] : SOURCE_COLORS[source];
               return (
                 <Box
                   key={source}
