@@ -40,3 +40,10 @@ temp/
 *.key
 secrets/
 credentials/
+
+# Browser / Tool Artifacts
+screenshots/
+*.png
+*.jpg
+*.jpeg
+*.pdf
