@@ -25,6 +25,6 @@ jobs:
           ssh -i ~/.ssh/id_rsa root@$SERVER_IP << 'EOF'
             cd /root/n8n
             git pull origin main
-            # Restart or update services as needed
-            docker compose -f services/infra/docker-compose.yml up -d
+            # Restart or update services using the multi-compose wrapper
+            ./d.sh up -d --build
           EOF
