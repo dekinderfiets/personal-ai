@@ -12,10 +12,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install rsync
-        run: sudo apt-get install -y rsync
-
-      - name: Deploy to Server
+      - name: Deploy via SSH Git Pull
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SERVER_IP: 161.97.150.154
@@ -25,9 +22,9 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H "$SERVER_IP" >> ~/.ssh/known_hosts
           
-          rsync -avz --delete -e "ssh -i ~/.ssh/id_rsa" ./ root@$SERVER_IP:/root/n8n/ \
-            --exclude framework/sandbox \
-            --exclude framework/context \
-            --exclude collector/node_modules \
-            --exclude collector/ui/node_modules \
-            --exclude .git/
+          ssh -i ~/.ssh/id_rsa root@$SERVER_IP << 'EOF'
+            cd /root/n8n
+            git pull origin main
+            # Restart or update services as needed
+            docker compose -f services/infra/docker-compose.yml up -d
+          EOF
