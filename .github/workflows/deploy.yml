@@ -1,0 +1,33 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install rsync
+        run: sudo apt-get install -y rsync
+
+      - name: Deploy to Server
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SERVER_IP: 161.97.150.154
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "$SERVER_IP" >> ~/.ssh/known_hosts
+          
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_rsa" ./ root@$SERVER_IP:/root/n8n/ \
+            --exclude framework/sandbox \
+            --exclude framework/context \
+            --exclude collector/node_modules \
+            --exclude collector/ui/node_modules \
+            --exclude .git/
